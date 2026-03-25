@@ -1,7 +1,8 @@
 FROM ghcr.io/prefix-dev/pixi:latest
 
 # Install git and Node.js (needed for clone, experiment loop, and Claude Code)
-RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs curl ca-certificates && rm -rf /var/lib/apt/lists/* && \
+    git lfs install
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
@@ -12,9 +13,12 @@ RUN npm install -g @anthropic-ai/claude-code
 # Create a non-root user for sandboxing
 RUN useradd --create-home --shell /bin/bash researcher
 
+RUN git config --global user.email "researcher@example.com" && git config --global user.name "Auto Researcher"
+
 # Clone the repo (requires a GitHub personal access token for github.nrel.gov)
 ARG GIT_TOKEN
-RUN git clone https://${GIT_TOKEN}@github.nrel.gov/RouteE/routee-autoresearch.git /workspace
+RUN git clone https://${GIT_TOKEN}@github.nrel.gov/RouteE/routee-autoresearch.git /workspace && \
+    cd /workspace && git pull && git lfs pull
 
 # Set working directory
 WORKDIR /workspace

@@ -16,9 +16,6 @@ docker build --build-arg GIT_TOKEN=your_token_here -t autoresearch .
 
 ```bash
 docker run -it \
-  -e ANTHROPIC_API_KEY=your_key_here \
-  --security-opt no-new-privileges \
-  --cap-drop ALL \
   --pids-limit 256 \
   --memory 8g \
   autoresearch
@@ -35,14 +32,15 @@ This drops you into a bash shell in `/workspace` with `claude` and `pixi` availa
 - **Resource limits**: 8 GB memory, 256 PIDs max
 - **Non-root user**: Runs as `researcher`
 
-### Extracting results
 
-The container is ephemeral. To copy results out before stopping:
+## Claude
 
-```bash
-# Find the container ID
-docker ps
+Run `claude` and then log in.
 
-# Copy results from the running container
-docker cp <container_id>:/workspace/results.tsv .
+Exit and then run again with `claude --dangerously-skip-permissions`
+
+Initiate the session with:
+
+```
+Hi have a look at program.md and let's kick off a new experiment! let's do the setup first.
 ```
