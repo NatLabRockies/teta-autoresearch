@@ -1,22 +1,25 @@
 FROM ghcr.io/prefix-dev/pixi:latest
 
+# Install git and Node.js (needed for clone, experiment loop, and Claude Code)
+RUN apt-get update && apt-get install -y --no-install-recommends git curl ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
+    apt-get install -y --no-install-recommends nodejs && \
+    rm -rf /var/lib/apt/lists/*
+
+# Install Claude Code
+RUN npm install -g @anthropic-ai/claude-code
+
 # Create a non-root user for sandboxing
 RUN useradd --create-home --shell /bin/bash researcher
+
+# Clone the repo (requires a GitHub personal access token for github.nrel.gov)
+ARG GIT_TOKEN
+RUN git clone https://${GIT_TOKEN}@github.nrel.gov/RouteE/routee-autoresearch.git /workspace
 
 # Set working directory
 WORKDIR /workspace
 
-# Copy project files
-COPY pyproject.toml pixi.lock ./
-COPY prepare.py train.py program.md ./
-COPY data/ data/
-
-# Install dependencies via pixi
 RUN pixi install
-
-# Initialize git repo (needed for the experiment loop)
-RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
-RUN git init && git add -A && git commit -m "initial"
 
 # Hand ownership to the non-root user
 RUN chown -R researcher:researcher /workspace

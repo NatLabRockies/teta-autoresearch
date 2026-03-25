@@ -1,0 +1,15 @@
+# pixi environments
+.pixi/*
+!.pixi/config.toml
+
+__pycache__/
+*.pyc
+*.pkl
+*.joblib
+
+.DS_Store
+.vscode/
+.mypy_cache/
+.ipynb_checkpoints/
+
+*.egg-info/
