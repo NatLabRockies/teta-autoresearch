@@ -4,6 +4,8 @@ from concurrent.futures import ProcessPoolExecutor, TimeoutError
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor
 
+import torch
+
 from prepare import prepare, evaluate
 
 # --- shared defaults ---
