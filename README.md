@@ -12,13 +12,15 @@ The Docker container provides a sandboxed environment with internet access, Clau
 docker build --build-arg GIT_TOKEN=your_token_here -t autoresearch .
 ```
 
-#### Internal Server
+#### Building on Linux Server
 
-If on an internal NLR server, you might need to inject the custom certificates:
+If on an internal linux server, you might need to inject the custom certificates. Add the `CA_CERT` build arg:
 
 ```bash
-docker build --build-arg CA_CERT="$(cat /usr/local/share/ca-certificates/nrel-ca-bundle.crt)" GIT_TOKEN=your_token_here -t autoresearch .
+docker build --build-arg CA_CERT="$(cat /usr/local/share/ca-certificates/nrel-ca-bundle.crt)" --build-arg GIT_TOKEN=your_token_here -t autoresearch .
 ```
+
+This can be combined with `--platform linux/amd64` if building on a Mac for a remote Linux server.
 
 ### Run
 

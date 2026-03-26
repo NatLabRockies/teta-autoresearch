@@ -10,6 +10,8 @@ RUN if [ -n "$CA_CERT" ]; then \
         echo "$CA_CERT" > /usr/local/share/ca-certificates/corporate-ca.crt && \
         update-ca-certificates; \
     fi
+ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
@@ -30,7 +32,7 @@ RUN git clone https://${GIT_TOKEN}@github.nrel.gov/RouteE/routee-autoresearch.gi
 # Set working directory
 WORKDIR /workspace
 
-RUN pixi install
+RUN pixi install --frozen
 
 # Hand ownership to the non-root user
 RUN chown -R researcher:researcher /workspace
