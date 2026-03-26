@@ -1,5 +1,12 @@
 FROM ghcr.io/prefix-dev/pixi:latest
 
+# Optional: inject corporate CA certificate for environments with SSL-intercepting proxies
+ARG CA_CERT
+RUN if [ -n "$CA_CERT" ]; then \
+        echo "$CA_CERT" >> /usr/local/share/ca-certificates/corporate-ca.crt && \
+        update-ca-certificates; \
+    fi
+
 # Install git and Node.js (needed for clone, experiment loop, and Claude Code)
 RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs curl ca-certificates && rm -rf /var/lib/apt/lists/* && \
     git lfs install
