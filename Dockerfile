@@ -1,16 +1,15 @@
 FROM ghcr.io/prefix-dev/pixi:latest
 
+# Install git and dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs curl ca-certificates && rm -rf /var/lib/apt/lists/* && \
+    git lfs install
+
 # Optional: inject corporate CA certificate for environments with SSL-intercepting proxies
 ARG CA_CERT
 RUN if [ -n "$CA_CERT" ]; then \
-        mkdir -p /usr/local/share/ca-certificates && \
         echo "$CA_CERT" > /usr/local/share/ca-certificates/corporate-ca.crt && \
         update-ca-certificates; \
     fi
-
-# Install git and Node.js (needed for clone, experiment loop, and Claude Code)
-RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs curl ca-certificates && rm -rf /var/lib/apt/lists/* && \
-    git lfs install
 RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && \
     apt-get install -y --no-install-recommends nodejs && \
     rm -rf /var/lib/apt/lists/*
