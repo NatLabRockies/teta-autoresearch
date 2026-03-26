@@ -29,15 +29,15 @@ ARG GIT_TOKEN
 RUN git clone https://${GIT_TOKEN}@github.nrel.gov/RouteE/routee-autoresearch.git /workspace && \
     cd /workspace && git pull && git lfs pull
 
+# Hand ownership to the non-root user before installing the environment
+RUN chown -R researcher:researcher /workspace
+
+USER researcher
+
 # Set working directory
 WORKDIR /workspace
 
 RUN pixi install --frozen
-
-# Hand ownership to the non-root user
-RUN chown -R researcher:researcher /workspace
-
-USER researcher
 
 # Default command: drop into a shell ready to run experiments
 CMD ["bash"]
