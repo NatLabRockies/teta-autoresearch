@@ -25,7 +25,7 @@ VEHICLES = {
             "max_depth": 10,
             "min_samples_split": 10,
             "random_state": 52,
-            "n_jobs": 4,
+            "n_jobs": -1, # use all cores
         },
     },
     "2016_Toyota_Camry": {
@@ -36,7 +36,7 @@ VEHICLES = {
             "max_depth": 10,
             "min_samples_split": 10,
             "random_state": 52,
-            "n_jobs": 4,
+            "n_jobs": -1, # use all cores 
         },
     },
 }
