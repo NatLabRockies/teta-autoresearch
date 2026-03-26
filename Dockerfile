@@ -3,7 +3,8 @@ FROM ghcr.io/prefix-dev/pixi:latest
 # Optional: inject corporate CA certificate for environments with SSL-intercepting proxies
 ARG CA_CERT
 RUN if [ -n "$CA_CERT" ]; then \
-        echo "$CA_CERT" >> /usr/local/share/ca-certificates/corporate-ca.crt && \
+        mkdir -p /usr/local/share/ca-certificates && \
+        echo "$CA_CERT" > /usr/local/share/ca-certificates/corporate-ca.crt && \
         update-ca-certificates; \
     fi
 
