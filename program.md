@@ -11,7 +11,7 @@ To set up a new experiment, work with the user to:
 3. **Read the in-scope files**: The repo is small. Read these files for full context:
    - `prepare.py` — fixed constants, data prep, evaluation. Do not modify.
    - `train.py` — the file you modify. Model architecture, optimizer, training.
-5. **Initialize results.tsv**: Create `results.tsv` with just the header row. The baseline will be recorded after the first run.
+5. **Initialize results.tsv**: Create `results/results-<tag>.tsv` with just the header row. The baseline will be recorded after the first run.
 6. **Confirm and go**: Confirm setup looks good.
 
 Once you get confirmation, kick off the experimentation.
@@ -70,12 +70,12 @@ features: speed_mph,grade_percent
 
 ## Logging results
 
-When an experiment is done, log it to `results.tsv` (tab-separated, NOT comma-separated — commas break in descriptions).
+When an experiment is done, log it to `results/results-<tag>.tsv` (tab-separated, NOT comma-separated — commas break in descriptions).
 
-The TSV has a header row and 4 columns:
+The TSV has a header row and 5 columns:
 
 ```
-commit	rmse    status	description
+commit	camry_rmse bolt_rmse    status	description
 ```
 
 1. git commit hash (short, 7 chars)
@@ -86,11 +86,11 @@ commit	rmse    status	description
 Example:
 
 ```
-commit	val_rmse	status	description
-a1b2c3d	0.997900	keep	baseline
-b2c3d4e	0.993200	keep	increase LR to 0.04
-c3d4e5f	1.005000	discard	switch to GeLU activation
-d4e5f6g	0.000000	crash	double model width (OOM)
+commit	camry_rmse	bolt_rmse   status	description
+a1b2c3d	0.997900 	0.997900    keep	   baseline
+b2c3d4e	0.993200 	0.993200    keep	   increase LR to 0.04
+c3d4e5f	1.005000 	1.005000    discard	switch to GeLU activation
+d4e5f6g	0.000000 	0.000000    crash	   double model width (OOM)
 ```
 
 ## The experiment loop
