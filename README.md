@@ -42,7 +42,6 @@ This drops you into a bash shell in `/workspace` with `claude` and `pixi` availa
 - **Resource limits**: 8 GB memory, 256 PIDs max
 - **Non-root user**: Runs as `researcher`
 
-
 ## Claude
 
 Run `claude` and then log in.
