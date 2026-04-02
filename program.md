@@ -9,8 +9,9 @@ To set up a new experiment, work with the user to:
 1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar5`). The branch `autoresearch/<tag>` must not already exist — this is a fresh run.
 2. **Create the branch**: `git checkout -b routee-autoresearch/<tag>` from current main.
 3. **Read the in-scope files**: The repo is small. Read these files for full context:
-   - `prepare.py` — fixed constants, data prep, evaluation. Do not modify.
-   - `train.py` — the file you modify. Model architecture, optimizer, training.
+   - `fixed_utils.py` — fixed constants, data prep, evaluation. Do not modify.
+   - `adjustable_utils.py` — A file you can modify. Feature aggregation and engineering.
+   - `train.py` — A file you modify. Model architecture, optimizer, training.
 4. **Initialize results.tsv**: Create `results/results-<tag>.tsv` with just the header row. The baseline will be recorded after the first run.
 5. **Confirm and go**: Confirm setup looks good.
 
