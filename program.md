@@ -7,16 +7,13 @@ This is an experiment to research better model architectures for RouteE Powertra
 To set up a new experiment, work with the user to:
 
 1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar5`). The branch `autoresearch/<tag>` must not already exist — this is a fresh run.
-2. **Create the branch**: `git checkout -b routee-autoresearch/<tag>` from current main.
-3. **Read the in-scope files**: The repo is small. Read these files for full context:
-   - `prepare.py` — fixed constants, data prep, evaluation. Do not modify.
-   - `train.py` — the file you modify. Model architecture, optimizer, training.
-4. **Start the token usage collector**: Launch the OTLP collector in the background so it captures token usage for the session:
-   ```bash
-   pixi run python otel_collector.py --tag <tag> &
-   ```
-5. **Initialize results.tsv**: Create `results/results-<tag>.tsv` with just the header row. The baseline will be recorded after the first run.
-6. **Confirm and go**: Confirm setup looks good.
+1. **Create the branch**: `git checkout -b routee-autoresearch/<tag>` from current main.
+1. **Read the in-scope files**: The repo is small. Read these files for full context:
+   - `fixed_utils.py` — fixed constants, data prep, evaluation. Do not modify.
+   - `adjustable_utils.py` — A file you can modify. Feature aggregation and engineering.
+   - `train.py` — A file you modify. Model architecture, optimizer, training.
+1. **Initialize results.tsv**: Create `results/results-<tag>.tsv` with just the header row. The baseline will be recorded after the first run.
+1. **Confirm and go**: Confirm setup looks good.
 
 Once you get confirmation, kick off the experimentation.
 
@@ -25,22 +22,26 @@ Once you get confirmation, kick off the experimentation.
 The training script runs for a **fixed time budget of 5 minutes** (wall clock training time, excluding startup/compilation). You launch it simply as: `pixi run python train.py`.
 
 **What you CAN do:**
-- Modify `train.py` — this is the only file you edit. Everything is fair game: model architecture, optimizer, hyperparameters, training loop, batch size, model size, features, etc.
+
+- Modify `train.py` or `adjustable_utils.py` — these are the only files you edit. Everything is fair game: model architecture, optimizer, hyperparameters, features, etc.
+
+- You can search the web for domain specific ideas and research to inspire changes to the model architecture or the feature engineering.
 
 **What you CANNOT do:**
-- Modify `prepare.py`. It is read-only. It contains the fixed evaluation and data loading.
+
+- Modify `fixed_utils.py`. It is read-only. It contains the fixed evaluation and data loading.
 - Install new packages or add dependencies. You can only use what's already in `pyproject.toml`.
-- Modify the evaluation harness. The `evaluate` function in `prepare.py` is the ground truth metric.
+- Modify the evaluation harness. The `evaluate` function in `fixed_utils.py` is the ground truth metric.
 
 **Context**
-Our training data represents two simulated vehicles, a Chevy Bolt and a Toyota Camry over road segments. They road segments have attributes like total distance, average speed, average road gradiant, road classification, time to traverse.
-These link records were derived from running the FastSIM simualtor over 1Hz drive cycles that had been map matched to a real road network and then aggregating the attributes.
-Right now both vehicles use the same model architecture but it's okay to use different architectures for each vehicle. 
+Our training data represents two simulated vehicles, a Chevy Bolt and a Toyota Camry over drive cycles traces (typically 1hz). We take these point level results and aggregate them up to the trip/road segment level. Then, the road segments have attributes like total distance, average speed, average road gradiant, road classification, time to traverse.
+Right now both vehicles use the same model architecture but it's okay to use different architectures for each vehicle.
 Notably each vehicle uses a different powertrain technology. The Chevy Bolt is a battery electric vehicle and as a result, the link energy can be negative (regenerative breaking).
 The Toyota Camry is a conventional vehicle and therefore the link energy will never be negative.
 The default feature set is speed and grade but you can experiment with any feature combination.
 
 Note that when we're applying these models for inference, we often only have limited data (which is why we're developing these models in the first place).
+Think about the inference environment as applying these models during a shortest path search in Google Maps where we only have limited information.
 If you're considering any kind of link sequencing, we will only have the context of the previous links that have been traversed and know nothing about the future links that might be traversed.
 
 **External Research**
@@ -84,8 +85,8 @@ commit	camry_rmse bolt_rmse    status	description
 
 1. git commit hash (short, 7 chars)
 2. rmse achieved (e.g. 1.234567) — use 0.000000 for crashes
-4. status: `keep`, `discard`, or `crash`
-5. short text description of what this experiment tried
+3. status: `keep`, `discard`, or `crash`
+4. short text description of what this experiment tried
 
 Example:
 
@@ -118,6 +119,6 @@ The idea is that you are a completely autonomous researcher trying things out. I
 
 **Crashes**: If a run crashes (OOM, or a bug, or etc.), use your judgment: If it's something dumb and easy to fix (e.g. a typo, a missing import), fix it and re-run. If the idea itself is fundamentally broken, just skip it, log "crash" as the status in the tsv, and move on.
 
-**NEVER STOP**: Once the experiment loop has begun (after the initial setup), do NOT pause to ask the human if you should continue. Do NOT ask "should I keep going?" or "is this a good stopping point?". The human might be asleep, or gone from a computer and expects you to continue working *indefinitely* until you are manually stopped. You are autonomous. If you run out of ideas, think harder — read papers referenced in the code, re-read the in-scope files for new angles, try combining previous near-misses, try more radical architectural changes. The loop runs until the human interrupts you, period.
+**NEVER STOP**: Once the experiment loop has begun (after the initial setup), do NOT pause to ask the human if you should continue. Do NOT ask "should I keep going?" or "is this a good stopping point?". The human might be asleep, or gone from a computer and expects you to continue working _indefinitely_ until you are manually stopped. You are autonomous. If you run out of ideas, think harder — read papers referenced in the code, re-read the in-scope files for new angles, try combining previous near-misses, try more radical architectural changes. The loop runs until the human interrupts you, period.
 
 As an example use case, a user might leave you running while they sleep. If each experiment takes you ~5 minutes then you can run approx 12/hour, for a total of about 100 over the duration of the average human sleep. The user then wakes up to experimental results, all completed by you while they slept!

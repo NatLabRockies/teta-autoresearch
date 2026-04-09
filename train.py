@@ -6,7 +6,7 @@ from sklearn.ensemble import RandomForestRegressor
 
 import torch
 
-from prepare import prepare, evaluate
+from fixed_utils import prepare, evaluate
 
 # --- shared defaults ---
 TIME_BUDGET_SECONDS = 5 * 60
@@ -25,7 +25,7 @@ VEHICLES = {
             "max_depth": 10,
             "min_samples_split": 10,
             "random_state": 52,
-            "n_jobs": -1, # use all cores
+            "n_jobs": -1,  # use all cores
         },
     },
     "2016_Toyota_Camry": {
@@ -36,7 +36,7 @@ VEHICLES = {
             "max_depth": 10,
             "min_samples_split": 10,
             "random_state": 52,
-            "n_jobs": -1, # use all cores 
+            "n_jobs": -1,  # use all cores
         },
     },
 }
@@ -93,5 +93,7 @@ if __name__ == "__main__":
             try:
                 future.result(timeout=TIME_BUDGET_SECONDS)
             except TimeoutError:
-                print(f"\n{vehicle_name}: timed out after {TIME_BUDGET_SECONDS}s, skipping")
+                print(
+                    f"\n{vehicle_name}: timed out after {TIME_BUDGET_SECONDS}s, skipping"
+                )
                 executor.shutdown(wait=False, cancel_futures=True)

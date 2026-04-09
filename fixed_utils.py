@@ -1,26 +1,16 @@
 import pandas as pd
 import numpy as np
 
+from adjustable_utils import aggregate_links, filter_data
+
 # ---------------------------------------------------------------------------
 # Constants (fixed, do not modify)
 # ---------------------------------------------------------------------------
 
 KWH_PER_GALLON_GASOLINE = 33.7
-ALL_COLUMNS = [
-    "journey_id",  # the trip id
-    "road_id",  # the link id
-    "time_seconds",  # time spent on the link in seconds
-    "speed_mph",  # average speed on the link in miles per hour
-    "grade_percent",  # average grade on the link in percent (i.e. -0.05 means 5% downhill, 0.1 means 10% uphill)
-    "road_class",  # the class of the road (e.g. 1 = highway, 2 = primary, etc.)
-    "miles",  # length of the link in miles
-    "energy_gge",  # energy consumed on the link in gallons of gasoline equivalent (gge)
-    "energy_rate_gge",  # energy rate on the link in gge per mile
-]
-
 
 # ---------------------------------------------------------------------------
-# Data utilities (fixed, do not modify)
+# Fixed Data utilities (do not modify)
 # ---------------------------------------------------------------------------
 
 
@@ -36,38 +26,6 @@ def load_data(path: str, energy_type: str) -> pd.DataFrame:
     return df
 
 
-def filter_data(df: pd.DataFrame, energy_type: str) -> pd.DataFrame:
-    """Filter outliers and engineer features for training."""
-    df = df.copy()
-
-    df = df.rename(columns={"secs": "time_seconds"})  # standardize column names
-
-    # Remove zero-distance links to avoid division by zero
-    df = df[df["miles"] > 0]
-
-    # Compute energy rate
-    df["energy_rate_gge"] = df["energy_gge"] / df["miles"]
-
-    # Filter extreme energy rates
-    df = df[df["energy_rate_gge"] < 0.4]
-
-    # Filter extreme speeds
-    df = df[df["speed_mph"] <= 120]
-
-    # Convert grade from decimal to percent
-    df["grade_percent"] = df["grade_dec"] * 100
-
-    # Filter extreme grades
-    df = df[df["grade_percent"].between(-20, 20)]
-
-    df = df[ALL_COLUMNS]  # keep only relevant columns
-
-    # Drop rows with NaN
-    df = df.dropna()
-
-    return df
-
-
 def prepare(
     path: str,
     energy_type: str,
@@ -76,6 +34,7 @@ def prepare(
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
     """Load, aggregate, filter, and split data into train/test sets."""
     df = load_data(path, energy_type)
+    df = aggregate_links(df)
     df = filter_data(df, energy_type)
 
     # Train/test split
