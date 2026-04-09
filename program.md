@@ -11,6 +11,10 @@ To set up a new experiment, work with the user to:
 3. **Read the in-scope files**: The repo is small. Read these files for full context:
    - `prepare.py` — fixed constants, data prep, evaluation. Do not modify.
    - `train.py` — the file you modify. Model architecture, optimizer, training.
+4. **Start the token usage collector**: Launch the OTLP collector in the background so it captures token usage for the session:
+   ```bash
+   pixi run python otel_collector.py --tag <tag> &
+   ```
 5. **Initialize results.tsv**: Create `results/results-<tag>.tsv` with just the header row. The baseline will be recorded after the first run.
 6. **Confirm and go**: Confirm setup looks good.
 

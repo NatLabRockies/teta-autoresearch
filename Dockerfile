@@ -40,5 +40,12 @@ WORKDIR /workspace
 
 RUN pixi install --frozen
 
+# Enable OpenTelemetry token usage tracking by default
+ENV CLAUDE_CODE_ENABLE_TELEMETRY=1
+ENV OTEL_METRICS_EXPORTER=otlp
+ENV OTEL_LOGS_EXPORTER=otlp
+ENV OTEL_EXPORTER_OTLP_PROTOCOL=http/json
+ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+
 # Default command: drop into a shell ready to run experiments
 CMD ["bash"]

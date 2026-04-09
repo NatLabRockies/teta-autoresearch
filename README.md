@@ -43,11 +43,49 @@ This drops you into a bash shell in `/workspace` with `claude` and `pixi` availa
 - **Non-root user**: Runs as `researcher`
 
 
+## Token Usage Tracking (OpenTelemetry)
+
+Claude Code sessions export token usage via OpenTelemetry. A lightweight OTLP collector (`otel_collector.py`) captures this data and writes it to `results/usage-<tag>.log`.
+
+### Setup
+
+Before launching Claude Code, start the collector and set the required environment variables:
+
+```bash
+# 1. Start the OTLP collector in the background
+pixi run python otel_collector.py --tag <tag> &
+
+# 2. Launch Claude Code with telemetry enabled
+CLAUDE_CODE_ENABLE_TELEMETRY=1 \
+OTEL_METRICS_EXPORTER=otlp \
+OTEL_LOGS_EXPORTER=otlp \
+OTEL_EXPORTER_OTLP_PROTOCOL=http/json \
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318 \
+claude --dangerously-skip-permissions
+```
+
+When the session ends, stop the collector with `Ctrl-C` (or `kill %1`). It writes a cumulative summary to the log file on exit.
+
+### Log format
+
+The usage log at `results/usage-<tag>.log` is tab-separated with columns:
+
+```
+timestamp    event          model              input  output  cache_read  cache_create
+2025-04-09…  api_request    claude-sonnet-4-6  1200   350     800         0
+```
+
+A summary with cumulative totals is appended when the collector shuts down.
+
 ## Claude
 
 Run `claude` and then log in.
 
-Exit and then run again with `claude --dangerously-skip-permissions`
+Exit and then run again with the telemetry environment variables shown above (or without them if you don't need usage tracking):
+
+```bash
+claude --dangerously-skip-permissions
+```
 
 Initiate the session with:
 
