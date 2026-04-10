@@ -1,13 +1,15 @@
 import pandas as pd
 import numpy as np
 
-from adjustable_utils import aggregate_links, filter_data
+from adjustable_utils import aggregate_links
 
 # ---------------------------------------------------------------------------
 # Constants (fixed, do not modify)
 # ---------------------------------------------------------------------------
 
 KWH_PER_GALLON_GASOLINE = 33.7
+FEET_PER_MILE = 5280
+SHORT_LINK_THRESHOLD_FEET = 10
 
 # ---------------------------------------------------------------------------
 # Fixed Data utilities (do not modify)
@@ -35,7 +37,7 @@ def prepare(
     """Load, aggregate, filter, and split data into train/test sets."""
     df = load_data(path, energy_type)
     df = aggregate_links(df)
-    df = filter_data(df, energy_type)
+    df = filter_data(df)
 
     # Train/test split
     rng = np.random.default_rng(random_seed)
@@ -44,6 +46,40 @@ def prepare(
     train_df = df[~mask].reset_index(drop=True)
 
     return train_df, test_df
+
+
+def filter_data(df: pd.DataFrame) -> pd.DataFrame:
+    """Filter outliers and clean data."""
+    df = df.copy()
+
+    # drop road id of -1000 which indicates a map matching failure.
+    df = df[df["road_id"] != -1000]
+
+    df = df.rename(columns={"secs": "time_seconds"})  # standardize column names
+
+    # Remove very short links that we wouldn't expect to see in practice
+    distance_threhold_miels = SHORT_LINK_THRESHOLD_FEET / FEET_PER_MILE
+    df = df[df["miles"] > distance_threhold_miels]
+
+    # Compute energy rate
+    df["energy_rate_gge"] = df["energy_gge"] / df["miles"]
+
+    # Filter extreme energy rates
+    df = df[(df["energy_rate_gge"] < 0.4) & (df["energy_rate_gge"] > -0.4)]
+
+    # Filter extreme speeds
+    df = df[df["speed_mph"] <= 120]
+
+    # Convert grade from decimal to percent
+    df["grade_percent"] = df["grade_dec"] * 100
+
+    # Filter extreme grades
+    df = df[df["grade_percent"].between(-20, 20)]
+
+    # Drop rows with NaN
+    df = df.dropna()
+
+    return df
 
 
 # ---------------------------------------------------------------------------
