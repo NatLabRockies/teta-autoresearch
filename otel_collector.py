@@ -60,8 +60,12 @@ class UsageCollector:
         }
         self.api_calls = 0
         with open(self.log_path, "w") as f:
-            f.write(f"# OTEL Token Usage Log — started {datetime.now(timezone.utc).isoformat()}\n")
-            f.write(f"# Format: timestamp\tevent\tmodel\tinput\toutput\tcache_read\tcache_create\n\n")
+            f.write(
+                f"# OTEL Token Usage Log — started {datetime.now(timezone.utc).isoformat()}\n"
+            )
+            f.write(
+                "# Format: timestamp\tevent\tmodel\tinput\toutput\tcache_read\tcache_create\n\n"
+            )
 
     def record_api_request(self, attrs: dict):
         """Record token usage from a claude_code.api_request log event."""
@@ -79,7 +83,9 @@ class UsageCollector:
 
         ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         with open(self.log_path, "a") as f:
-            f.write(f"{ts}\tapi_request\t{model}\t{input_t}\t{output_t}\t{cache_read}\t{cache_create}\n")
+            f.write(
+                f"{ts}\tapi_request\t{model}\t{input_t}\t{output_t}\t{cache_read}\t{cache_create}\n"
+            )
 
     def record_metric(self, metric_name: str, value: int, attrs: dict):
         """Record token usage from a claude_code.token.usage metric data point."""
@@ -102,7 +108,7 @@ class UsageCollector:
 
     def write_summary(self):
         with open(self.log_path, "a") as f:
-            f.write(f"\n# ===== Session Summary =====\n")
+            f.write("\n# ===== Session Summary =====\n")
             f.write(f"# Completed: {datetime.now(timezone.utc).isoformat()}\n")
             f.write(f"# API calls: {self.api_calls}\n")
             for k, v in self.totals.items():
@@ -148,7 +154,10 @@ def process_logs(data: dict, collector: UsageCollector):
                 event_name = body.get("stringValue", "")
                 # Also check attributes for event.name
                 attrs = attrs_to_dict(record.get("attributes", []))
-                if event_name == API_REQUEST_EVENT or attrs.get("event.name") == API_REQUEST_EVENT:
+                if (
+                    event_name == API_REQUEST_EVENT
+                    or attrs.get("event.name") == API_REQUEST_EVENT
+                ):
                     collector.record_api_request(attrs)
 
 
@@ -158,15 +167,19 @@ def process_traces(data: dict, collector: UsageCollector):
         for ss in rs.get("scopeSpans", []):
             for span in ss.get("spans", []):
                 attrs = attrs_to_dict(span.get("attributes", []))
-                token_attrs = {k: _int(v) for k, v in attrs.items() if k in TOKEN_ATTR_KEYS}
+                token_attrs = {
+                    k: _int(v) for k, v in attrs.items() if k in TOKEN_ATTR_KEYS
+                }
                 if token_attrs:
-                    model = attrs.get("model", attrs.get("gen_ai.response.model", "unknown"))
+                    model = attrs.get(
+                        "model", attrs.get("gen_ai.response.model", "unknown")
+                    )
                     token_attrs["model"] = model
                     collector.record_api_request(token_attrs)
 
 
 class OTLPHandler(BaseHTTPRequestHandler):
-    collector: UsageCollector = None
+    collector: UsageCollector | None = None
 
     def do_POST(self):
         content_length = int(self.headers.get("Content-Length", 0))
@@ -194,9 +207,15 @@ class OTLPHandler(BaseHTTPRequestHandler):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="OTLP HTTP/JSON receiver for Claude Code token usage")
-    parser.add_argument("--tag", required=True, help="Experiment tag (used in log filename)")
-    parser.add_argument("--port", type=int, default=4318, help="Port to listen on (default: 4318)")
+    parser = argparse.ArgumentParser(
+        description="OTLP HTTP/JSON receiver for Claude Code token usage"
+    )
+    parser.add_argument(
+        "--tag", required=True, help="Experiment tag (used in log filename)"
+    )
+    parser.add_argument(
+        "--port", type=int, default=4318, help="Port to listen on (default: 4318)"
+    )
     args = parser.parse_args()
 
     log_path = Path("results") / f"usage-{args.tag}.log"

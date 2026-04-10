@@ -6,6 +6,11 @@ platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
 version = "0.1.0"
 
 [tasks]
+mypy = "mypy ."
+lint = "ruff check"
+format = "ruff format --check"
+dprint = "dprint check"
+check = { depends-on = ["mypy", "lint", "format", "dprint"] }
 
 [dependencies]
 python = "3.13.*"
@@ -19,3 +24,4 @@ pyarrow = ">=23.0.1,<24"
 scikit-learn = ">=1.8.0,<2"
 pytorch = ">=2.10.0,<3"
 dprint = ">=0.50.0,<0.51"
+ruff = ">=0.15.10,<0.16"

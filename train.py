@@ -2,15 +2,13 @@ import time
 from concurrent.futures import ProcessPoolExecutor, TimeoutError
 
 import pandas as pd
-from sklearn.ensemble import RandomForestRegressor
-
-import torch
+from sklearn.ensemble import RandomForestRegressor  # type: ignore[import-untyped]
 
 from fixed_utils import prepare, evaluate
 
 # --- shared defaults ---
 TIME_BUDGET_SECONDS = 5 * 60
-FEATURES = ["speed_mph", "grade_percent"]
+FEATURES = ["speed_mph", "grade_percent", "miles"]
 TARGET = "energy_rate_gge"
 
 # --- vehicle configs ---
@@ -72,7 +70,7 @@ def run_vehicle(name: str, config: dict) -> dict:
     model = train_random_forest(train_df, FEATURES, TARGET, config["model"])
 
     # evaluate
-    actual = test_df[TARGET].values
+    actual = test_df[TARGET].to_numpy()
     predicted = model.predict(test_df[FEATURES])
     results = evaluate(actual, predicted)
     for k, v in results.items():
