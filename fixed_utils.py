@@ -8,6 +8,7 @@ import numpy as np
 KWH_PER_GALLON_GASOLINE = 33.7
 FEET_PER_MILE = 5280
 SHORT_LINK_THRESHOLD_FEET = 10
+LONG_LINK_THRESHOLD_MILES = 0.5
 
 # ---------------------------------------------------------------------------
 # Fixed Data utilities (do not modify)
@@ -51,6 +52,9 @@ def filter_data(df: pd.DataFrame) -> pd.DataFrame:
     # Remove very short links that we wouldn't expect to see in practice
     distance_threhold_miels = SHORT_LINK_THRESHOLD_FEET / FEET_PER_MILE
     df = df[df["miles"] > distance_threhold_miels]
+
+    # Remove very long links that are likely data errors
+    df = df[df["miles"] < LONG_LINK_THRESHOLD_MILES]
 
     # Compute energy rate
     df["energy_rate_gge"] = df["energy_gge"] / df["miles"]

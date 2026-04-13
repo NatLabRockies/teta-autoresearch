@@ -1,6 +1,6 @@
 # Autoresearch
 
-This is an experiment to research better model architectures. See `domain.md` for domain context and constraints.
+This is an experiment to research better ML models. See `domain.md` for domain context and constraints.
 
 ## Setup
 
@@ -9,11 +9,12 @@ To set up a new experiment, work with the user to:
 1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar5`). The branch `autoresearch/<tag>` must not already exist — this is a fresh run.
 1. **Create the branch**: `git checkout -b routee-autoresearch/<tag>` from current main.
 1. **Read the in-scope files**: The repo is small. Read these files for full context:
+   - `seed.md` - Notes and ideas for this experiment session. Do not modify.
    - `domain.md` - Explanation of the domain context and constraints. Do not modify.
    - `fixed_utils.py` — fixed constants, data prep, evaluation. Do not modify.
-   - `adjustable_utils.py` — A file you can modify. Feature aggregation and engineering.
    - `train.py` — A file you modify. Model architecture, optimizer, training.
 1. **Initialize results.tsv**: Create `results/results-<tag>.tsv` with just the header row. The baseline will be recorded after the first run.
+1. **Research Phase**: Spend some time researching the current state of knowledge on the domain and create a session plan at `plans/plan-<tag>.md`. Use this file plus the `seed.md` and the `domain.md` to guide the experiments in this session.
 1. **Confirm and go**: Confirm setup looks good.
 
 Once you get confirmation, kick off the experimentation.
@@ -24,13 +25,11 @@ The training script runs for a **fixed time budget of 5 minutes** (wall clock tr
 
 **What you CAN do:**
 
-- Modify `train.py` or `adjustable_utils.py` — these are the only files you edit. Everything is fair game: model architecture, optimizer, hyperparameters, features, etc.
-
-- You can search the web for domain specific ideas and research to inspire changes to the model architecture or the feature engineering.
+- Modify `train.py` — this is the only file you edit. Everything is fair game: model architecture, optimizer, hyperparameters, features, etc.
 
 **What you CANNOT do:**
 
-- Modify `fixed_utils.py`. It is read-only. It contains the fixed evaluation and data loading.
+- Modify `fixed_utils.py` or `domain.md`. It is read-only. It contains the fixed evaluation and data loading.
 - Install new packages or add dependencies. You can only use what's already in `pyproject.toml`.
 - Modify the evaluation harness. The `evaluate` function in `fixed_utils.py` is the ground truth metric.
 
@@ -38,19 +37,50 @@ The training script runs for a **fixed time budget of 5 minutes** (wall clock tr
 
 **Simplicity criterion**: All else being equal, simpler is better. A small improvement that adds ugly complexity is not worth it. Conversely, removing something and getting equal or better results is a great outcome — that's a simplification win. When evaluating whether to keep a change, weigh the complexity cost against the improvement magnitude. A 0.001 rmse improvement that adds 20 lines of hacky code? Probably not worth it. A 0.001 rmse improvement from deleting code? Definitely keep. An improvement of ~0 but much simpler code? Keep.
 
+**Atomic changes**: Make sure that every experiment only includes one atomic change that can be pointed to as a cause of the resulting model improvement. For example, if you decide to add a new feature, only add a single feature and see how the model reacts rather than adding two features since we won't know which feature resulted in the improvement.
+
 **The first run**: Your very first run should always be to establish the baseline, so you will run the training script as is.
 
-## Output format
+## Output Format
 
-Once the script finishes it prints a summary. See `domain.md` for the expected output format and example.
+Once the script finishes it prints a summary like this:
+
+```
+rmse: 0.039590
+total_seconds: 9.4
+features: speed_mph,grade_percent
+```
+
+To extract results from the log: `grep "^rmse:" run.log`
+
+## Results TSV Format
+
+The TSV has 4 columns:
+
+```
+commit	rmse	status	description
+```
+
+1. git commit hash (short, 7 chars)
+2. rmse (e.g. 0.039590) — use 0.000000 for crashes
+3. status: `keep`, `discard`, or `crash`
+4. short text description of what this experiment tried
+
+Example:
+
+```
+commit	rmse	status	description
+a1b2c3d	0.039590	keep	baseline
+b2c3d4e	0.035200	keep	increase LR to 0.04
+c3d4e5f	0.041000	discard	switch to GeLU activation
+d4e5f6g	0.000000	crash	double model width (OOM)
+```
 
 ## Logging results
 
 When an experiment is done, log it to `results/results-<tag>.tsv` (tab-separated, NOT comma-separated — commas break in descriptions).
 
-The TSV has a header row with columns for: git commit hash (short, 7 chars), metric columns (see `domain.md` for specifics), status (`keep`, `discard`, or `crash`), and a short text description. Use 0.000000 for crashes.
-
-See `domain.md` for the exact column definitions and an example.
+The TSV has a header row with columns for: git commit hash (short, 7 chars), metric columns (`rmse`), status (`keep`, `discard`, or `crash`), and a short text description. Use 0.000000 for crashes.
 
 ## The experiment loop
 
@@ -62,7 +92,7 @@ LOOP FOREVER:
 2. Tune `train.py` with an experimental idea by directly hacking the code.
 3. git commit
 4. Run the experiment: `pixi run python train.py > run.log 2>&1` (redirect everything — do NOT use tee or let output flood your context)
-5. Read out the results: use the grep pattern from `domain.md` to extract metrics from `run.log`
+5. Read out the results: use the grep pattern from the Output Results section to extract metrics from `run.log`
 6. If the grep output is empty, the run crashed. Run `tail -n 50 run.log` to read the Python stack trace and attempt a fix. If you can't get things to work after more than a few attempts, give up.
 7. Record the results in the tsv (NOTE: create a new sub folder in the results directory and commit to git)
 8. If rmse improved (lower), you "advance" the branch, keeping the git commit

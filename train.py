@@ -33,7 +33,6 @@ def aggregate_links(df: pd.DataFrame) -> pd.DataFrame:
             speed_mph=("speed_mph", "mean"),
             grade_dec=("grade_dec_filtered", "mean"),
             energy_gge=("energy_gge", "sum"),
-            road_class=("road_class", "first"),
         )
         .reset_index()
     )
@@ -44,9 +43,6 @@ def aggregate_links(df: pd.DataFrame) -> pd.DataFrame:
 def train_model() -> dict:
     """Train and evaluate. Returns results dict."""
     t0 = time.time()
-    print(f"\n{'=' * 40}")
-    print(f"vehicle: {CONFIG['name']}")
-    print(f"{'=' * 40}")
 
     # data
     df = load_data(CONFIG["data_path"], energy_type=CONFIG["energy_type"])
