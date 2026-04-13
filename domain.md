@@ -26,3 +26,5 @@ For example, we do not have acceleration based data when doing model inference a
 That being said, you could consider novel features like the speed on the previous link or average_speed^2.
 
 If you're considering any kind of link sequencing, we will only have the context of the previous links that have been traversed and know nothing about the future links that might be traversed.
+
+Do not filter or remove data points to reduce error. The model must be able to predict all values in the dataset, including extreme energy rates such as heavy regenerative braking. Filtering outliers artificially lowers RMSE without improving the model's actual predictive capability — we need accurate predictions across the full distribution.
