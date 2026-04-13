@@ -7,8 +7,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends git git-lfs cur
 # Optional: inject corporate CA certificate for environments with SSL-intercepting proxies
 ARG CA_CERT
 RUN if [ -n "$CA_CERT" ]; then \
-        echo "$CA_CERT" > /usr/local/share/ca-certificates/corporate-ca.crt && \
-        update-ca-certificates; \
+    echo "$CA_CERT" > /usr/local/share/ca-certificates/corporate-ca.crt && \
+    update-ca-certificates; \
     fi
 ENV SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 ENV REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt
@@ -39,13 +39,6 @@ USER researcher
 WORKDIR /workspace
 
 RUN pixi install --frozen
-
-# Enable OpenTelemetry token usage tracking by default
-ENV CLAUDE_CODE_ENABLE_TELEMETRY=1
-ENV OTEL_METRICS_EXPORTER=otlp
-ENV OTEL_LOGS_EXPORTER=otlp
-ENV OTEL_EXPORTER_OTLP_PROTOCOL=http/json
-ENV OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 
 # Default command: drop into a shell ready to run experiments
 CMD ["bash"]
