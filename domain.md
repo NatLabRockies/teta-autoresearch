@@ -18,6 +18,7 @@ Our inference environment has the following features:
 - Link Distance: The distance of the link
   Think about the inference environment as applying these models during a shortest path search in Google Maps where we only have limited information.
   If you're considering any kind of link sequencing, we will only have the context of the previous links that have been traversed and know nothing about the future links that might be traversed.
+- Geometry: The link geometry in the well known binary format using the 4326 CRS (latitude and longitude points)
 
 ## Constraints
 

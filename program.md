@@ -40,7 +40,6 @@ The training script runs for a **fixed time budget of 10 minutes** (wall clock t
 **What you CANNOT do:**
 
 - Modify `fixed_utils.py` or `domain.md`. It is read-only. It contains the fixed evaluation and data loading.
-- Install new packages or add dependencies. You can only use what's already in `pyproject.toml`.
 - Modify the evaluation harness. The `evaluate` function in `fixed_utils.py` is the ground truth metric.
 
 **The goal is simple: get the lowest rmse.** Since the time budget is fixed, you don't need to worry about training time — it's always 10 minutes. Everything is fair game: change the architecture, the optimizer, the hyperparameters, the batch size, the model size. The only constraint is that the code runs without crashing and finishes within the time budget.
