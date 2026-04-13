@@ -4,10 +4,16 @@ from concurrent.futures import ProcessPoolExecutor, TimeoutError
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor  # type: ignore[import-untyped]
 
-from fixed_utils import filter_data, load_data, evaluate, train_test_split
+from fixed_utils import (
+    aggregate_links,
+    filter_data,
+    load_data,
+    evaluate,
+    train_test_split,
+)
 
 # --- shared defaults ---
-TIME_BUDGET_SECONDS = 5 * 60
+TIME_BUDGET_SECONDS = 10 * 60
 FEATURES = ["speed_mph", "grade_percent", "miles"]
 TARGET = "energy_rate_gge"
 
@@ -17,27 +23,6 @@ CONFIG = {
     "data_path": "data/raw/2017_Chevy_Bolt.parquet",
     "energy_type": "bev",
 }
-
-
-def aggregate_links(df: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate 1Hz point-level data to link-level data.
-
-    Groups by (journeyId, road_id) and computes link-level summaries.
-    This is the step where raw simulation points become road-link records.
-    """
-    agg = (
-        df.groupby(["journeyId", "road_id"], sort=False)
-        .agg(
-            secs=("time_gap", "sum"),
-            miles=("simdrive_miles", "sum"),
-            speed_mph=("speed_mph", "mean"),
-            grade_dec=("grade_dec_filtered", "mean"),
-            energy_gge=("energy_gge", "sum"),
-        )
-        .reset_index()
-    )
-    agg = agg.rename(columns={"journeyId": "journey_id"})
-    return agg
 
 
 def train_model() -> dict:
@@ -55,7 +40,7 @@ def train_model() -> dict:
     y = train_df[TARGET]
 
     model_params = {
-        "n_estimators": 20,
+        "n_estimators": 200,
         "max_depth": 10,
         "min_samples_split": 10,
         "random_state": 52,

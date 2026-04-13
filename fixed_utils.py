@@ -40,6 +40,30 @@ def train_test_split(
     return train_df, test_df
 
 
+def aggregate_links(df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate 1Hz point-level data to link-level data.
+
+    Groups by (journeyId, road_id) and computes link-level summaries.
+    This is the step where raw simulation points become road-link records.
+    """
+    agg = (
+        df.groupby(["journeyId", "road_id"], sort=False)
+        .agg(
+            secs=("time_gap", "sum"),
+            link_start_time=("time_rel", "min"),
+            link_end_time=("time_rel", "max"),
+            miles=("simdrive_miles", "sum"),
+            speed_mph=("speed_mph", "mean"),
+            grade_dec=("grade_dec_filtered", "mean"),
+            energy_gge=("energy_gge", "sum"),
+            n_points=("datapointId", "count"),
+        )
+        .reset_index()
+    )
+    agg = agg.rename(columns={"journeyId": "journey_id"})
+    return agg
+
+
 def filter_data(df: pd.DataFrame) -> pd.DataFrame:
     """Filter outliers and clean data."""
     df = df.copy()
@@ -60,7 +84,7 @@ def filter_data(df: pd.DataFrame) -> pd.DataFrame:
     df["energy_rate_gge"] = df["energy_gge"] / df["miles"]
 
     # Filter extreme energy rates
-    df = df[(df["energy_rate_gge"] < 0.4) & (df["energy_rate_gge"] > -0.4)]
+    df = df[(df["energy_rate_gge"] < 5) & (df["energy_rate_gge"] > -5)]
 
     # Filter extreme speeds
     df = df[df["speed_mph"] <= 120]
@@ -70,6 +94,9 @@ def filter_data(df: pd.DataFrame) -> pd.DataFrame:
 
     # Filter extreme grades
     df = df[df["grade_percent"].between(-20, 20)]
+
+    # Drop links with less than 2 points per link
+    df = df[df["n_points"] >= 2]
 
     # Drop rows with NaN
     df = df.dropna()
