@@ -1,8 +1,6 @@
 import pandas as pd
 import numpy as np
 
-from adjustable_utils import aggregate_links
-
 # ---------------------------------------------------------------------------
 # Constants (fixed, do not modify)
 # ---------------------------------------------------------------------------
@@ -28,23 +26,16 @@ def load_data(path: str, energy_type: str) -> pd.DataFrame:
     return df
 
 
-def prepare(
-    path: str,
-    energy_type: str,
+def train_test_split(
+    df: pd.DataFrame,
     test_size: float = 0.2,
     random_seed: int = 42,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
-    """Load, aggregate, filter, and split data into train/test sets."""
-    df = load_data(path, energy_type)
-    df = aggregate_links(df)
-    df = filter_data(df)
-
-    # Train/test split
+    """Split data into train/test sets."""
     rng = np.random.default_rng(random_seed)
     mask = rng.random(len(df)) < test_size
     test_df = df[mask].reset_index(drop=True)
     train_df = df[~mask].reset_index(drop=True)
-
     return train_df, test_df
 
 

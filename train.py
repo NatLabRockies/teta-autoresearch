@@ -4,70 +4,70 @@ from concurrent.futures import ProcessPoolExecutor, TimeoutError
 import pandas as pd
 from sklearn.ensemble import RandomForestRegressor  # type: ignore[import-untyped]
 
-from fixed_utils import prepare, evaluate
+from fixed_utils import filter_data, load_data, evaluate, train_test_split
 
 # --- shared defaults ---
 TIME_BUDGET_SECONDS = 5 * 60
 FEATURES = ["speed_mph", "grade_percent", "miles"]
 TARGET = "energy_rate_gge"
 
-# --- vehicle configs ---
-# Each vehicle has its own data path, energy type, and model hyperparameters.
-# This makes it easy to swap in different architectures per vehicle later.
-VEHICLES = {
-    "2017_Chevy_Bolt": {
-        "data_path": "data/raw/2017_Chevy_Bolt.parquet",
-        "energy_type": "bev",
-        "model": {
-            "n_estimators": 20,
-            "max_depth": 10,
-            "min_samples_split": 10,
-            "random_state": 52,
-            "n_jobs": -1,  # use all cores
-        },
-    },
-    "2016_Toyota_Camry": {
-        "data_path": "data/raw/2016_Toyota_Camry.parquet",
-        "energy_type": "ice",
-        "model": {
-            "n_estimators": 20,
-            "max_depth": 10,
-            "min_samples_split": 10,
-            "random_state": 52,
-            "n_jobs": -1,  # use all cores
-        },
-    },
+# --- data config ---
+CONFIG = {
+    "name": "2017_Chevy_Bolt",
+    "data_path": "data/raw/2017_Chevy_Bolt.parquet",
+    "energy_type": "bev",
 }
 
 
-def train_random_forest(
-    train_df: pd.DataFrame,
-    features: list[str],
-    target: str,
-    model_params: dict,
-) -> RandomForestRegressor:
-    """Train a RandomForestRegressor on the given data."""
-    X = train_df[features]
-    y = train_df[target]
+def aggregate_links(df: pd.DataFrame) -> pd.DataFrame:
+    """Aggregate 1Hz point-level data to link-level data.
 
-    model = RandomForestRegressor(**model_params)
-    model.fit(X, y)
+    Groups by (journeyId, road_id) and computes link-level summaries.
+    This is the step where raw simulation points become road-link records.
+    """
+    agg = (
+        df.groupby(["journeyId", "road_id"], sort=False)
+        .agg(
+            secs=("time_gap", "sum"),
+            miles=("simdrive_miles", "sum"),
+            speed_mph=("speed_mph", "mean"),
+            grade_dec=("grade_dec_filtered", "mean"),
+            energy_gge=("energy_gge", "sum"),
+            road_class=("road_class", "first"),
+        )
+        .reset_index()
+    )
+    agg = agg.rename(columns={"journeyId": "journey_id"})
+    return agg
 
-    return model
 
-
-def run_vehicle(name: str, config: dict) -> dict:
-    """Train and evaluate a single vehicle. Returns results dict."""
+def train_model() -> dict:
+    """Train and evaluate. Returns results dict."""
     t0 = time.time()
     print(f"\n{'=' * 40}")
-    print(f"vehicle: {name}")
+    print(f"vehicle: {CONFIG['name']}")
     print(f"{'=' * 40}")
 
     # data
-    train_df, test_df = prepare(config["data_path"], energy_type=config["energy_type"])
+    df = load_data(CONFIG["data_path"], energy_type=CONFIG["energy_type"])
+    df = aggregate_links(df)
+    df = filter_data(df)
+    train_df, test_df = train_test_split(df, test_size=0.2, random_seed=42)
 
     # train
-    model = train_random_forest(train_df, FEATURES, TARGET, config["model"])
+    X = train_df[FEATURES]
+    y = train_df[TARGET]
+
+    model_params = {
+        "n_estimators": 20,
+        "max_depth": 10,
+        "min_samples_split": 10,
+        "random_state": 52,
+        "n_jobs": -1,  # use all cores
+    }
+
+    model = RandomForestRegressor(**model_params)
+    model.fit(X, y)
 
     # evaluate
     actual = test_df[TARGET].to_numpy()
@@ -85,13 +85,12 @@ def run_vehicle(name: str, config: dict) -> dict:
 
 
 if __name__ == "__main__":
-    for vehicle_name, vehicle_config in VEHICLES.items():
-        with ProcessPoolExecutor(max_workers=1) as executor:
-            future = executor.submit(run_vehicle, vehicle_name, vehicle_config)
-            try:
-                future.result(timeout=TIME_BUDGET_SECONDS)
-            except TimeoutError:
-                print(
-                    f"\n{vehicle_name}: timed out after {TIME_BUDGET_SECONDS}s, skipping"
-                )
-                executor.shutdown(wait=False, cancel_futures=True)
+    with ProcessPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(train_model)
+        try:
+            future.result(timeout=TIME_BUDGET_SECONDS)
+        except TimeoutError:
+            print(
+                f"\n{CONFIG['name']}: timed out after {TIME_BUDGET_SECONDS}s, skipping"
+            )
+            executor.shutdown(wait=False, cancel_futures=True)

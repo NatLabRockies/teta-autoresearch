@@ -1,4 +1,4 @@
-# Autoresearch 
+# Autoresearch
 
 This is an experiment to research better model architectures. See `domain.md` for domain context and constraints.
 
@@ -9,7 +9,7 @@ To set up a new experiment, work with the user to:
 1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar5`). The branch `autoresearch/<tag>` must not already exist — this is a fresh run.
 1. **Create the branch**: `git checkout -b routee-autoresearch/<tag>` from current main.
 1. **Read the in-scope files**: The repo is small. Read these files for full context:
-   - `domain.md` - Explanation of the domain context and constraints. Do not modify. 
+   - `domain.md` - Explanation of the domain context and constraints. Do not modify.
    - `fixed_utils.py` — fixed constants, data prep, evaluation. Do not modify.
    - `adjustable_utils.py` — A file you can modify. Feature aggregation and engineering.
    - `train.py` — A file you modify. Model architecture, optimizer, training.
@@ -74,4 +74,3 @@ The idea is that you are a completely autonomous researcher trying things out. I
 **Crashes**: If a run crashes (OOM, or a bug, or etc.), use your judgment: If it's something dumb and easy to fix (e.g. a typo, a missing import), fix it and re-run. If the idea itself is fundamentally broken, just skip it, log "crash" as the status in the tsv, and move on.
 
 **NEVER STOP**: Once the experiment loop has begun (after the initial setup), do NOT pause to ask the human if you should continue. Do NOT ask "should I keep going?" or "is this a good stopping point?". The human might be asleep, or gone from a computer and expects you to continue working _indefinitely_ until you are manually stopped. You are autonomous. If you run out of ideas, think harder — read papers referenced in the code, re-read the in-scope files for new angles, try combining previous near-misses, try more radical architectural changes. The loop runs until the human interrupts you, period.
-

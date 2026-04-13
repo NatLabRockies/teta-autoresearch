@@ -9,8 +9,11 @@ version = "0.1.0"
 mypy = "mypy ."
 lint = "ruff check"
 format = "ruff format --check"
+format_fix = "ruff format"
 dprint = "dprint check"
+dprint_fix = "dprint fmt"
 check = { depends-on = ["mypy", "lint", "format", "dprint"] }
+fix = { depends-on = ["format_fix", "dprint_fix"] }
 
 [dependencies]
 python = "3.13.*"
@@ -25,3 +28,4 @@ scikit-learn = ">=1.8.0,<2"
 pytorch = ">=2.10.0,<3"
 dprint = ">=0.50.0,<0.51"
 ruff = ">=0.15.10,<0.16"
+pandas-stubs = ">=3.0.0.260204,<4"
