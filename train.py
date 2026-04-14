@@ -1,5 +1,7 @@
 import time
+import math
 import pandas as pd
+from shapely import wkb
 from concurrent.futures import ProcessPoolExecutor, TimeoutError
 
 from sklearn.ensemble import RandomForestRegressor  # type: ignore[import-untyped]
@@ -23,6 +25,13 @@ FEATURES = [
     "prev3_speed_mph",
     "prev4_speed_mph",
     "time_seconds",
+    "sinuosity",
+    "abs_bearing_delta",
+    "link_position",
+    "prev_sinuosity",
+    "prev_abs_bearing_delta",
+    "speed_accel",
+    "prev_time_seconds",
 ]
 TARGET = "energy_rate_gge"
 
@@ -51,12 +60,47 @@ def train_model() -> dict:
     df["prev2_speed_mph"] = df.groupby("journey_id")["speed_mph"].shift(2)
     df["prev3_speed_mph"] = df.groupby("journey_id")["speed_mph"].shift(3)
     df["prev4_speed_mph"] = df.groupby("journey_id")["speed_mph"].shift(4)
+    df["prev_time_seconds"] = df.groupby("journey_id")["time_seconds"].shift(1)
+    df["link_position"] = df.groupby("journey_id").cumcount()
+    prev_speed_delta = df.groupby("journey_id")["speed_delta"].shift(1)
+    df["speed_accel"] = df["speed_delta"] - prev_speed_delta
+
+    # geometry: extract sinuosity and bearing in single pass
+    def calc_geom_features(geom_hex):
+        g = wkb.loads(geom_hex, hex=True)
+        coords = list(g.coords)
+        start, end = coords[0], coords[-1]
+        dx, dy = end[0] - start[0], end[1] - start[1]
+        straight = math.sqrt(dx**2 + dy**2)
+        if straight < 1e-10:
+            sinuosity = 1.0
+        else:
+            road_len = sum(
+                math.sqrt((coords[i+1][0]-coords[i][0])**2 + (coords[i+1][1]-coords[i][1])**2)
+                for i in range(len(coords)-1)
+            )
+            sinuosity = road_len / straight
+        bearing = math.atan2(dx, dy) * 180 / math.pi
+        return sinuosity, bearing
+
+    geom_feats = df["geometry"].apply(calc_geom_features)
+    df["sinuosity"] = geom_feats.apply(lambda x: x[0])
+    df["bearing"] = geom_feats.apply(lambda x: x[1])
+    df["prev_sinuosity"] = df.groupby("journey_id")["sinuosity"].shift(1)
+    df["prev_bearing"] = df.groupby("journey_id")["bearing"].shift(1)
+    # Normalize bearing delta to [-180, 180]
+    raw_delta = df["bearing"] - df["prev_bearing"]
+    df["bearing_delta"] = (raw_delta + 180) % 360 - 180
+    df["abs_bearing_delta"] = df["bearing_delta"].abs()
+    df["prev_abs_bearing_delta"] = df.groupby("journey_id")["abs_bearing_delta"].shift(1)
+
     df = df.dropna(
         subset=[
             "prev_speed_mph",
             "prev2_speed_mph",
             "prev3_speed_mph",
             "prev4_speed_mph",
+            "bearing_delta",
         ]
     )
 
