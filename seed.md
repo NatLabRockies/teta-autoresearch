@@ -4,4 +4,4 @@ Notes and ideas to kickstart this experiment session.
 You do not have to follow these instructions explicitly, these are just context for the session to guide you.
 
 ## ideas
- - we have the geometry of each link in wkb format with the 4326 CRS (lat/lon). We can explore different ways to represent this feature and see if it encodes information about the energy.
+ - we have pytorch installed in our environment. let's explore some novel machine learning architectures like sequence models. before starting the experiment session, search the web for some literature on novel ML architecture for this problem or similar problems.
