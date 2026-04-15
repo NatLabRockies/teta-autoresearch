@@ -44,7 +44,35 @@ Accumulated findings across experiment sessions. Read this at the start of every
 - **n_estimators=400, 1500** — negligible gains beyond 2000's point on the curve relative to training-time cost.
 - **Predicting energy_gge instead of rate** — 1.55% worse. Division by miles amplifies errors on short links. Direct rate prediction is better.
 
-### Best known configuration (apr13b/exp20, RMSE 0.006400)
+### Neural network findings (apr14 session)
+
+- **1D-CNN beats RF.** A 3-layer Conv1d (128 channels, kernel_size=3) over 5-link journey windows achieves RMSE 0.006152 vs RF's 0.006400 — a 3.9% improvement. CNN naturally captures sequential patterns between consecutive links.
+- **Per-link sequence features**: speed_mph, grade_percent, miles, time_seconds, sinuosity, abs_bearing_delta — these 6 features per timestep across a 5-link window are the CNN inputs. Link_position is a static feature concatenated after conv.
+- **OneCycleLR with max_lr=3e-3** is the best LR schedule. CosineAnnealing with lr=3e-4 was 0.5% worse. Higher LR (1e-2) diverges.
+- **Batch size 2048** slightly better than 1024 (more epochs in time budget).
+- **Transformer too slow** — only 4 epochs vs CNN's 12-13. GRU also slow (7 epochs). CNN is the fastest architecture for fixed-length short sequences.
+- **Ensembles don't work** under time budget — splitting time between models means each is undertrained. Unlike RF where each tree is cheap, NNs need many epochs.
+- **BatchNorm hurts** with pre-normalized inputs and few epochs.
+- **Residual connections no help** on 3-layer CNN with seq_len=5 — too shallow to need them.
+- **MLP on flat features (same as RF)** gives RMSE 0.006343 — beats RF (0.006400) but worse than CNN (0.006152). Confirms CNN sequence modeling adds value beyond just NN optimization.
+- **Static delta features (speed_delta, grade_delta, speed_accel)** redundant when CNN already has the raw sequence — CNN can derive deltas from adjacent timesteps.
+- **Huber loss worse than MSE** — MSE training aligns better with RMSE evaluation metric.
+- **Weight decay 1e-4** is sweet spot; 1e-3 underfits.
+- **256 conv channels** too slow (9 epochs vs 13); 128 is the capacity sweet spot for 10-min budget.
+
+### Best known configuration (apr14/exp20, RMSE 0.006152)
+
+- 1D-CNN: 3 Conv1d layers (128 channels, kernel_size=3, padding=1), ReLU activations
+- Head: Linear(640+1, 256) -> ReLU -> Dropout(0.1) -> Linear(256, 128) -> ReLU -> Linear(128, 1)
+- Sequence: 5-link window (current + 4 previous), 6 features per link
+- Link features: speed_mph, grade_percent, miles, time_seconds, sinuosity, abs_bearing_delta
+- Static features: link_position
+- StandardScaler normalization on both sequence and static features
+- AdamW optimizer, OneCycleLR max_lr=3e-3, weight_decay=1e-4
+- Batch size 2048, MSE loss
+- ~13 epochs in 10-minute budget
+
+### Best known RF configuration (apr13b/exp20, RMSE 0.006400)
 
 - RandomForestRegressor with n_estimators=2000, max_depth=None, min_samples_split=10, max_features=0.7, max_samples=0.5
 - Features: speed_mph, grade_percent, miles, prev_speed_mph, speed_delta, prev_miles, grade_delta, link_position, prev2_speed_mph, prev3_speed_mph, prev4_speed_mph, time_seconds, sinuosity, abs_bearing_delta, prev_sinuosity, prev_abs_bearing_delta, speed_accel, prev_time_seconds
