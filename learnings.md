@@ -59,8 +59,19 @@ Accumulated findings across experiment sessions. Read this at the start of every
 - **Huber loss worse than MSE** — MSE training aligns better with RMSE evaluation metric.
 - **Weight decay 1e-4** is sweet spot; 1e-3 underfits.
 - **256 conv channels** too slow (9 epochs vs 13); 128 is the capacity sweet spot for 10-min budget.
+- **Gradient clipping (max_norm=1.0)** helps with high LR — prevents gradient spikes during training. 0.42% improvement.
+- **SiLU/Swish activation** massively worse than ReLU — slower and destabilizes training for this architecture.
+- **QuantileTransformer** worse than StandardScaler — distorts feature relationships CNN was using.
+- **Sequence length 7** no better than 5 — consistent with RF finding that speed lookback saturates at 4.
+- **Multi-scale/inception CNN (k=1,3,5)** no help — with seq_len=5, kernel=3 already covers most of sequence.
+- **Batch 4096** too large — reduced gradient noise hurts generalization. 2048 sweet spot.
+- **2 conv layers** nearly tied with 3 layers but marginally worse — 3 layers is the right depth.
+- **Global avg/max pooling** worse than flattening — flattening preserves positional info.
+- **Temporal attention pooling** also worse than flattening — with only 5 timesteps, no need for learned attention.
+- **LR 5e-3** too aggressive even with OneCycleLR. 3e-3 confirmed as sweet spot.
+- **Signed bearing_delta** as sequence feature adds noise; abs_bearing_delta already captures turn severity.
 
-### Best known configuration (apr14/exp20, RMSE 0.006152)
+### Best known configuration (apr14/exp22, RMSE 0.006126)
 
 - 1D-CNN: 3 Conv1d layers (128 channels, kernel_size=3, padding=1), ReLU activations
 - Head: Linear(640+1, 256) -> ReLU -> Dropout(0.1) -> Linear(256, 128) -> ReLU -> Linear(128, 1)
@@ -68,7 +79,7 @@ Accumulated findings across experiment sessions. Read this at the start of every
 - Link features: speed_mph, grade_percent, miles, time_seconds, sinuosity, abs_bearing_delta
 - Static features: link_position
 - StandardScaler normalization on both sequence and static features
-- AdamW optimizer, OneCycleLR max_lr=3e-3, weight_decay=1e-4
+- AdamW optimizer, OneCycleLR max_lr=3e-3, weight_decay=1e-4, gradient clipping max_norm=1.0
 - Batch size 2048, MSE loss
 - ~13 epochs in 10-minute budget
 
