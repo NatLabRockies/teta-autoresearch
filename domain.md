@@ -29,3 +29,5 @@ That being said, you could consider novel features like the speed on the previou
 If you're considering any kind of link sequencing, we will only have the context of the previous links that have been traversed and know nothing about the future links that might be traversed.
 
 Do not filter or remove data points to reduce error. The model must be able to predict all values in the dataset, including extreme energy rates such as heavy regenerative braking. Filtering outliers artificially lowers RMSE without improving the model's actual predictive capability — we need accurate predictions across the full distribution.
+
+Do not include a feature like link position since at inference time, we will not know the position of a link relative to a whole trajectory.
