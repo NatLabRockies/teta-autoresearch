@@ -45,6 +45,7 @@ def _sample_extra_trees(trial: optuna.Trial) -> dict:
         "min_samples_split": trial.suggest_int("et_min_samples_split", 2, 20),
         "max_features": trial.suggest_float("et_max_features", 0.3, 1.0),
         "max_samples": trial.suggest_float("et_max_samples", 0.3, 0.8),
+        "bootstrap": True,
         "random_state": 42,
         "n_jobs": -1,
     }
