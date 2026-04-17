@@ -32,6 +32,7 @@ ALL_FEATURES: list[str] = [
     "prev2_speed_mph",
     "prev3_speed_mph",
     "prev4_speed_mph",
+    "prev5_speed_mph",
     "time_seconds",
     "sinuosity",
     "abs_bearing_delta",
@@ -82,6 +83,7 @@ def load_and_engineer(data_path: str) -> pd.DataFrame:
     df["prev2_speed_mph"] = df.groupby("journey_id")["speed_mph"].shift(2)
     df["prev3_speed_mph"] = df.groupby("journey_id")["speed_mph"].shift(3)
     df["prev4_speed_mph"] = df.groupby("journey_id")["speed_mph"].shift(4)
+    df["prev5_speed_mph"] = df.groupby("journey_id")["speed_mph"].shift(5)
     df["prev_time_seconds"] = df.groupby("journey_id")["time_seconds"].shift(1)
     df["link_position"] = df.groupby("journey_id").cumcount()
     prev_speed_delta = df.groupby("journey_id")["speed_delta"].shift(1)
@@ -127,6 +129,7 @@ def load_and_engineer(data_path: str) -> pd.DataFrame:
             "prev2_speed_mph",
             "prev3_speed_mph",
             "prev4_speed_mph",
+            "prev5_speed_mph",
             "bearing_delta",
         ]
     ).reset_index(drop=True)
