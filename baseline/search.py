@@ -14,6 +14,7 @@ sessions (see ../program.md).
 """
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -95,6 +96,42 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_RESULTS_DIR,
         help="Directory for TSV, JSONL, and SQLite outputs.",
     )
+    p.add_argument(
+        "--phase",
+        type=int,
+        choices=[1, 2],
+        default=None,
+        help=(
+            "Phase of two-phase search: 1=tune family/HPs with fixed features, "
+            "2=ablate features with fixed family/HPs. Omit for joint search."
+        ),
+    )
+    p.add_argument(
+        "--phase2-family",
+        default=None,
+        help=(
+            "For phase 2 only: the winning model family from phase 1 "
+            "(e.g. 'rf' or 'cnn')."
+        ),
+    )
+    p.add_argument(
+        "--phase2-params",
+        default=None,
+        help=(
+            "For phase 2 only: JSON string of fixed model params from phase 1 "
+            "(e.g. '{\"rf_n_estimators\": 1200, ...}'). "
+            "Extract from phase 1 results or use --extract-phase1."
+        ),
+    )
+    p.add_argument(
+        "--extract-phase1",
+        type=Path,
+        default=None,
+        help=(
+            "Path to phase 1 results DB. Extract best trial params "
+            "and print them (for phase 2 command)."
+        ),
+    )
     return p.parse_args()
 
 
@@ -108,11 +145,18 @@ def _build_sampler(name: str) -> optuna.samplers.BaseSampler:
 
 def main() -> None:
     args = parse_args()
+
+    # If --extract-phase1 is provided, load that study and print best params, then exit
+    if args.extract_phase1:
+        _extract_and_print_phase1(args.extract_phase1)
+        return
+
     results_dir: Path = args.results_dir
     results_dir.mkdir(parents=True, exist_ok=True)
     print("CONFIGURATION:")
     for k, v in vars(args).items():
-        print(f"  {k}: {v}")
+        if k != "extract_phase1":  # Skip this for clarity
+            print(f"  {k}: {v}")
 
     storage_path = results_dir / f"search-{args.tag}.db"
     storage = f"sqlite:///{storage_path}"
@@ -146,8 +190,23 @@ def main() -> None:
             )
             sys.exit(1)
 
+    # Parse phase 2 params if provided
+    phase2_params: dict | None = None
+    if args.phase == 2:
+        if not args.phase2_family:
+            print("Error: phase 2 requires --phase2-family", file=sys.stderr)
+            sys.exit(1)
+        if not args.phase2_params:
+            print("Error: phase 2 requires --phase2-params", file=sys.stderr)
+            sys.exit(1)
+        try:
+            phase2_params = json.loads(args.phase2_params)
+        except json.JSONDecodeError as e:
+            print(f"Error parsing --phase2-params JSON: {e}", file=sys.stderr)
+            sys.exit(1)
+
     # Enqueue warm-start configs as the very first trials, filtered to active families
-    if not args.no_warm_start and completed == 0:
+    if not args.no_warm_start and completed == 0 and args.phase != 2:
         warm = [
             cfg for cfg in WARM_START_CONFIGS
             if families is None or cfg.get("family") in families
@@ -162,10 +221,14 @@ def main() -> None:
         results_dir=results_dir,
         tag=args.tag,
         families=families,
+        phase=args.phase,
+        phase2_family=args.phase2_family,
+        phase2_params=phase2_params,
     )
 
+    phase_str = f"phase {args.phase}" if args.phase else "joint"
     print(
-        f"\nStudy '{args.tag}'  sampler={args.sampler}  "
+        f"\nStudy '{args.tag}'  ({phase_str})  sampler={args.sampler}  "
         f"budget={args.budget:.0f}s/trial  "
         f"trials={completed}+{remaining}={args.n_trials}"
     )
@@ -192,10 +255,32 @@ def _print_best(study: optuna.Study) -> None:
     print("\n=== Best trial ===")
     print(f"  trial  : {best.number}")
     print(f"  rmse   : {best.value:.6f}")
-    print(f"  family : {best.params.get('family', 'unknown')}")
+    family = best.params.get("family", "unknown")
+    print(f"  family : {family}")
     print(f"  params :")
     for k, v in best.params.items():
         print(f"    {k}: {v}")
+
+    # For phase 1 results, print extraction command for phase 2
+    if family in ["rf", "extra_trees", "hgbr", "xgb", "lgbm", "mlp"]:
+        print(f"\nFor phase 2, use: --phase2-family {family}")
+        # Build the fixed params dict (HP keys only, not feature flags)
+        hp_keys = [k for k in best.params.keys() if k != "family" and not k.startswith("feat_")]
+        fixed_params = {k: best.params[k] for k in hp_keys}
+        params_json = json.dumps(fixed_params)
+        print(f"  --phase2-params '{params_json}'")
+
+
+def _extract_and_print_phase1(db_path: Path) -> None:
+    """Load a phase 1 study and print best trial params for phase 2 usage."""
+    if not db_path.exists():
+        print(f"Error: {db_path} does not exist", file=sys.stderr)
+        sys.exit(1)
+
+    study_name = db_path.stem.replace("search-", "")
+    storage = f"sqlite:///{db_path}"
+    study = optuna.load_study(study_name=study_name, storage=storage)
+    _print_best(study)
 
 
 if __name__ == "__main__":

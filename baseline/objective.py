@@ -21,7 +21,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from feature_pipeline import load_and_engineer
 from models import run_trial
-from search_space import sample_config
+from search_space import sample_config, sample_config_phase1, sample_config_phase2
 
 
 def make_objective(
@@ -30,12 +30,23 @@ def make_objective(
     results_dir: Path,
     tag: str,
     families: list[str] | None = None,
+    phase: int | None = None,
+    phase2_family: str | None = None,
+    phase2_params: dict | None = None,
 ) -> Any:
     """Return an Optuna objective with pre-loaded data.
 
     The DataFrame is engineered once and shared across all trials in the
     process.  Each trial selects a feature subset and model family, trains
     within ``budget_seconds``, and logs to TSV + JSONL.
+    
+    Parameters
+    ----------
+    phase : int | None
+        If None, joint search (sample family + HPs + features together).
+        If 1, phase 1: sample family + HPs, fix features to all available.
+        If 2, phase 2: fix family + HPs, sample feature subsets only.
+          For phase 2, must provide phase2_family and phase2_params.
     """
     data_path_abs = Path(data_path).resolve()
     if not data_path_abs.exists():
@@ -87,7 +98,18 @@ def make_objective(
             f.write(json.dumps(record) + "\n")
 
     def objective(trial: optuna.Trial) -> float:
-        config = sample_config(trial, families=families)
+        if phase == 1:
+            config = sample_config_phase1(trial, families=families)
+        elif phase == 2:
+            if phase2_family is None or phase2_params is None:
+                raise ValueError(
+                    "Phase 2 requires phase2_family and phase2_params to be set"
+                )
+            config = sample_config_phase2(trial, phase2_family, phase2_params)
+        else:
+            # Default: joint search
+            config = sample_config(trial, families=families)
+
         family = config["family"]
         feat_key = "seq_features" if family in ("cnn", "gru") else "features"
         features_str = ",".join(config.get(feat_key, []))

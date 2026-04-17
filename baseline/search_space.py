@@ -175,12 +175,12 @@ def _sample_seq_features(trial: optuna.Trial) -> tuple[list[str], list[str]]:
 
 
 # ---------------------------------------------------------------------------
-# Main entry-point
+# Main entry-points: joint, phase 1, and phase 2
 # ---------------------------------------------------------------------------
 
 
 def sample_config(trial: optuna.Trial, families: list[str] | None = None) -> dict:
-    """Sample a complete experiment config for one Optuna trial."""
+    """Sample a complete experiment config for one Optuna trial (joint search)."""
     family_list = families if families is not None else ALL_FAMILIES
     family = trial.suggest_categorical("family", family_list)
     config: dict = {"family": family}
@@ -203,6 +203,67 @@ def sample_config(trial: optuna.Trial, families: list[str] | None = None) -> dic
             "mlp": _sample_mlp,
         }
         config["model_params"] = samplers[family](trial)
+
+    return config
+
+
+def sample_config_phase1(
+    trial: optuna.Trial, families: list[str] | None = None
+) -> dict:
+    """Phase 1: Sample family + HPs only; fix features to all available.
+    
+    This allows the TPE surrogate to converge on good HP ranges without
+    confusion from varying feature sets.
+    """
+    family_list = families if families is not None else ALL_FAMILIES
+    family = trial.suggest_categorical("family", family_list)
+    config: dict = {"family": family}
+
+    if family in SEQUENTIAL_FAMILIES:
+        # Use all available sequential features (no sampling)
+        config["seq_features"] = SEQ_FEATURE_POOL
+        config["static_features"] = STATIC_FEATURE_POOL
+        config["model_params"] = (
+            _sample_cnn(trial) if family == "cnn" else _sample_gru(trial)
+        )
+    else:
+        # Use all tabular features (no sampling)
+        config["features"] = ALL_FEATURES
+        samplers = {
+            "rf": _sample_rf,
+            "extra_trees": _sample_extra_trees,
+            "hgbr": _sample_hgbr,
+            "xgb": _sample_xgb,
+            "lgbm": _sample_lgbm,
+            "mlp": _sample_mlp,
+        }
+        config["model_params"] = samplers[family](trial)
+
+    return config
+
+
+def sample_config_phase2(
+    trial: optuna.Trial,
+    fixed_family: str,
+    fixed_params: dict,
+) -> dict:
+    """Phase 2: Fix family + HPs from Phase 1; sample feature subsets only.
+    
+    This enables clean feature ablation: each trial is a direct A/B test
+    of feature inclusion/exclusion.
+    """
+    config: dict = {"family": fixed_family}
+
+    if fixed_family in SEQUENTIAL_FAMILIES:
+        # Sample feature subsets for sequential models
+        seq_feats, static_feats = _sample_seq_features(trial)
+        config["seq_features"] = seq_feats
+        config["static_features"] = static_feats
+    else:
+        # Sample feature subsets for tabular models
+        config["features"] = _sample_tabular_features(trial)
+
+    config["model_params"] = fixed_params
 
     return config
 
