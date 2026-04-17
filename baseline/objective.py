@@ -56,13 +56,30 @@ def make_objective(
     if not tsv_path.exists():
         tsv_path.write_text("trial\trmse\tstatus\tdescription\n")
 
-    def _log(trial_num: int, rmse: float, status: str, desc: str, params: dict) -> None:
+    # Mutable best tracker shared across all trials in this session.
+    _best: dict = {"rmse": float("inf"), "trial": None}
+
+    def _log(
+        trial_num: int,
+        rmse: float,
+        status: str,
+        desc: str,
+        params: dict,
+        best_rmse_before: float,
+    ) -> None:
         with tsv_path.open("a") as f:
             f.write(f"{trial_num}\t{rmse:.6f}\t{status}\t{desc}\n")
+        delta_pct = (
+            round((rmse - best_rmse_before) / best_rmse_before * 100, 2)
+            if math.isfinite(rmse) and math.isfinite(best_rmse_before)
+            else None
+        )
         record = {
             "trial": trial_num,
             "status": status,
-            "rmse": rmse,
+            "rmse": rmse if math.isfinite(rmse) else 0.0,
+            "best_rmse_before": best_rmse_before if math.isfinite(best_rmse_before) else None,
+            "delta_pct": delta_pct,
             "description": desc,
             "params": params,
         }
@@ -76,6 +93,7 @@ def make_objective(
         features_str = ",".join(config.get(feat_key, []))
         desc = f"{family} | {features_str[:80]}"
 
+        best_rmse_before = _best["rmse"]
         print(f"\n[trial {trial.number}] {desc}")
         t_start = time.time()
         try:
@@ -89,13 +107,20 @@ def make_objective(
             if not math.isfinite(rmse):
                 raise ValueError(f"non-finite RMSE: {rmse}")
             elapsed = time.time() - t_start
-            print(f"  rmse={rmse:.6f}  elapsed={elapsed:.0f}s")
-            _log(trial.number, rmse, "evaluated", desc, trial.params)
+            if rmse < _best["rmse"]:
+                _best["rmse"] = rmse
+                _best["trial"] = trial.number
+                status = "keep"
+                print(f"  rmse={rmse:.6f}  elapsed={elapsed:.0f}s  ** new best **")
+            else:
+                status = "discard"
+                print(f"  rmse={rmse:.6f}  elapsed={elapsed:.0f}s")
+            _log(trial.number, rmse, status, desc, trial.params, best_rmse_before)
             return rmse
         except Exception as exc:
             elapsed = time.time() - t_start
             print(f"  CRASH after {elapsed:.0f}s: {exc}")
-            _log(trial.number, 0.0, "crash", desc, trial.params)
+            _log(trial.number, 0.0, "crash", desc, trial.params, best_rmse_before)
             return float("inf")
 
     return objective
