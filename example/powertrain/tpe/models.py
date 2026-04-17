@@ -161,7 +161,7 @@ def _make_loader(X_seq, X_static, y, batch_size: int, shuffle: bool, device):
         torch.tensor(X_static, dtype=torch.float32),
         torch.tensor(y, dtype=torch.float32),
     )
-    return DataLoader(ds, batch_size=batch_size, shuffle=shuffle, pin_memory=pin)
+    return DataLoader(ds, batch_size=batch_size, shuffle=shuffle, pin_memory=pin, drop_last=shuffle)
 
 
 def _run_nn_eval(model, X_seq_te, X_static_te, y_te, device) -> float:
