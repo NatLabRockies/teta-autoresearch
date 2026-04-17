@@ -5,6 +5,7 @@ Usage
 -----
     pixi run python search.py --tag apr15 --n-trials 200
     pixi run python search.py --tag apr15 --n-trials 200 --sampler cmaes --budget 300
+    pixi run python search.py --tag apr15 --n-trials 1000 --budget 120 --search-budget 3600
     pixi run python search.py --tag apr15 --n-trials 50  --sampler random --no-warm-start
 
 The study is persisted to SQLite so interrupted runs can be resumed by
@@ -59,6 +60,16 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=600.0,
         help="Per-trial training wall-clock budget in seconds.",
+    )
+    p.add_argument(
+        "--search-budget",
+        type=float,
+        default=None,
+        help=(
+            "Global wall-clock budget for the entire study in seconds. "
+            "If set, search stops when either --n-trials is reached or this "
+            "timeout is hit."
+        ),
     )
     p.add_argument(
         "--parallel",
@@ -154,6 +165,10 @@ def _build_sampler(name: str) -> optuna.samplers.BaseSampler:
 def main() -> None:
     args = parse_args()
 
+    if args.search_budget is not None and args.search_budget <= 0:
+        print("Error: --search-budget must be > 0", file=sys.stderr)
+        sys.exit(1)
+
     # If --extract-phase1 is provided, load that study and print best params, then exit
     if args.extract_phase1:
         _extract_and_print_phase1(args.extract_phase1)
@@ -245,6 +260,8 @@ def main() -> None:
         f"budget={args.budget:.0f}s/trial  "
         f"trials={completed}+{remaining}={args.n_trials}"
     )
+    if args.search_budget is not None:
+        print(f"Search budget : {args.search_budget:.0f}s total")
     print(f"Storage : {storage_path}")
     print(f"Results : {results_dir}/search-{args.tag}.[tsv|jsonl]")
     print()
@@ -252,6 +269,7 @@ def main() -> None:
     study.optimize(
         objective,
         n_trials=remaining,
+        timeout=args.search_budget,
         n_jobs=args.parallel,
         show_progress_bar=False,
     )

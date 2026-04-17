@@ -68,6 +68,10 @@ pixi install
 # CMA-ES sampler, 5-minute budget (better for neural families)
 ./run.sh --tag apr15 --n-trials 50 --sampler cmaes --budget 300
 
+# Fair baseline: cap the entire search at 1 hour wall clock
+# (search also stops early if n-trials is reached first)
+./run.sh --tag apr15-fair --n-trials 1000 --budget 120 --search-budget 3600
+
 # a true baseline run (no surrogate model)
 ./run.sh --tag apr15-rand --n-trials 200 --sampler random --no-warm-start
 ```
@@ -98,6 +102,7 @@ pixi install
 | `--n-trials` | 100 | Total trials to run (resumed runs count existing trials) |
 | `--sampler` | `tpe` | `tpe`, `cmaes`, or `random` |
 | `--budget` | 120 | Per-trial training time in seconds |
+| `--search-budget` | None | Total wall-clock budget for the full study in seconds; search stops when this timeout is reached or when `--n-trials` completes |
 | `--parallel` | 1 | Concurrent trials (share same SQLite DB across processes) |
 | `--data-path` | `../../../data/processed/2017_Chevy_Bolt.parquet` | Parquet input |
 | `--results-dir` | `results/` | Output directory |
