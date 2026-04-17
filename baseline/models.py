@@ -92,6 +92,10 @@ def train_tabular(
         from lightgbm import LGBMRegressor  # type: ignore[import-untyped]
         model = LGBMRegressor(**model_params)
         t0 = time.time()
+        # Use DataFrames to preserve feature names and avoid the
+        # "X does not have valid feature names" warning on predict.
+        X_train = train_df[features]
+        X_test = test_df[features]
         model.fit(X_train, y_train)
         elapsed = time.time() - t0
         if elapsed > budget_seconds:
