@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 import optuna
+from optuna import TrialPruned
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
@@ -119,13 +120,36 @@ def make_objective(
         print(f"\n[trial {trial.number}] {desc}")
         t_start = time.time()
         try:
-            with ProcessPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(run_trial, config, df, budget_seconds)
+            # For neural families with trial/pruning, run in-process to avoid pickling trial.
+            # For others, use ProcessPoolExecutor for timeout protection.
+            family = config["family"]
+            if family in ("cnn", "gru"):
+                # Run in-process; pruning check will happen inside the trainer
                 try:
-                    rmse = future.result(timeout=budget_seconds)
-                except _TimeoutError:
-                    future.cancel()
-                    raise RuntimeError(f"trial timed out after {budget_seconds:.0f}s")
+                    rmse = run_trial(config, df, budget_seconds, trial)
+                except TrialPruned:
+                    elapsed = time.time() - t_start
+                    print(f"  PRUNED after {elapsed:.0f}s")
+                    _log(
+                        trial.number,
+                        float("nan"),
+                        "pruned",
+                        desc,
+                        trial.params,
+                        best_rmse_before,
+                    )
+                    # Returning inf for pruned trials means Optuna skips them in results
+                    return float("inf")
+            else:
+                # Tabular models: use ProcessPoolExecutor for timeout protection
+                with ProcessPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(run_trial, config, df, budget_seconds, None)
+                    try:
+                        rmse = future.result(timeout=budget_seconds)
+                    except _TimeoutError:
+                        future.cancel()
+                        raise RuntimeError(f"trial timed out after {budget_seconds:.0f}s")
+
             if not math.isfinite(rmse):
                 raise ValueError(f"non-finite RMSE: {rmse}")
             elapsed = time.time() - t_start

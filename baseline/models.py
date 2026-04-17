@@ -1,7 +1,10 @@
 """Model training implementations for all supported families.
 
-``run_trial(config, df, budget_seconds)`` is the single entry-point.
+``run_trial(config, df, budget_seconds, trial=None)`` is the single entry-point.
 It dispatches to the appropriate trainer based on ``config["family"]``.
+
+For neural families, pass ``trial`` to enable Optuna pruning based on
+intermediate validation RMSE values.
 """
 
 import sys
@@ -33,8 +36,15 @@ def train_tabular(
     train_df: Any,
     test_df: Any,
     budget_seconds: float,
+    trial: Any = None,
 ) -> float:
-    """Train a sklearn / XGBoost / LightGBM model and return RMSE."""
+    """Train a sklearn / XGBoost / LightGBM model and return RMSE.
+    
+    Parameters
+    ----------
+    trial : optuna.Trial, optional
+        Trial object; not used for tabular models (they train too fast for pruning).
+    """
     family = config["family"]
     features: list[str] = config["features"]
     model_params: dict = config["model_params"]
@@ -171,8 +181,16 @@ def train_cnn(
     train_df: Any,
     test_df: Any,
     budget_seconds: float,
+    trial: Any = None,
 ) -> float:
-    """Train a 1-D convolutional network and return RMSE."""
+    """Train a 1-D convolutional network and return RMSE.
+    
+    Parameters
+    ----------
+    trial : optuna.Trial, optional
+        If provided, enables Optuna pruning: reports validation RMSE after
+        each epoch and raises TrialPruned if the trial should be stopped.
+    """
     import torch
     import torch.nn as nn
 
@@ -181,11 +199,45 @@ def train_cnn(
     seq_feats: list[str] = config["seq_features"]
     static_feats: list[str] = config["static_features"]
 
-    X_seq_tr, X_static_tr, y_tr = build_sequences(train_df, seq_feats, static_feats, seq_len)
+    # Split training data into train/val for early stopping + pruning
+    if trial is not None:
+        # Journey-level split for consistency with sequential logic
+        journey_ids = sorted(train_df["journey_id"].unique())
+        n_val = max(1, int(len(journey_ids) * 0.2))
+        val_ids = set(journey_ids[-n_val:])
+        train_for_training = train_df[~train_df["journey_id"].isin(val_ids)].reset_index(drop=True)
+        train_for_val = train_df[train_df["journey_id"].isin(val_ids)].reset_index(drop=True)
+    else:
+        train_for_training = train_df
+        train_for_val = None
+
+    X_seq_tr, X_static_tr, y_tr = build_sequences(train_for_training, seq_feats, static_feats, seq_len)
+    if trial is not None and train_for_val is not None:
+        X_seq_val, X_static_val, y_val = build_sequences(train_for_val, seq_feats, static_feats, seq_len)
+    else:
+        X_seq_val = X_static_val = y_val = None
+
     X_seq_te, X_static_te, y_te = build_sequences(test_df, seq_feats, static_feats, seq_len)
-    X_seq_tr, X_static_tr, X_seq_te, X_static_te = _scale_sequences(
-        X_seq_tr, X_static_tr, X_seq_te, X_static_te
-    )
+    
+    if X_seq_val is not None:
+        X_seq_tr, X_static_tr, X_seq_val, X_static_val = _scale_sequences(
+            X_seq_tr, X_static_tr, X_seq_val, X_static_val
+        )
+        # Re-scale test with train statistics
+        from sklearn.preprocessing import StandardScaler as SS
+        scaler_seq = SS()
+        N_tr, T, F = X_seq_tr.shape
+        scaler_seq.fit(X_seq_tr.reshape(-1, F))
+        N_te = X_seq_te.shape[0]
+        X_seq_te = scaler_seq.transform(X_seq_te.reshape(-1, F)).reshape(N_te, T, F)
+        if X_static_tr.shape[1] > 0:
+            scaler_static = SS()
+            scaler_static.fit(X_static_tr)
+            X_static_te = scaler_static.transform(X_static_te)
+    else:
+        X_seq_tr, X_static_tr, X_seq_te, X_static_te = _scale_sequences(
+            X_seq_tr, X_static_tr, X_seq_te, X_static_te
+        )
 
     n_seq_feats = len(seq_feats)
     n_static = len(static_feats)
@@ -237,6 +289,7 @@ def train_cnn(
     )
     criterion = nn.MSELoss()
     deadline = time.time() + budget_seconds
+    epoch = 0
 
     while time.time() < deadline:
         model.train()
@@ -253,6 +306,15 @@ def train_cnn(
             optimizer.step()
             scheduler.step()
 
+        # After each epoch, compute validation RMSE and report to Optuna
+        if trial is not None and X_seq_val is not None:
+            val_rmse = _run_nn_eval(model, X_seq_val, X_static_val, y_val, device)
+            trial.report(val_rmse, step=epoch)
+            epoch += 1
+            if trial.should_prune():
+                import optuna
+                raise optuna.TrialPruned()
+
     return _run_nn_eval(model, X_seq_te, X_static_te, y_te, device)
 
 
@@ -266,8 +328,16 @@ def train_gru(
     train_df: Any,
     test_df: Any,
     budget_seconds: float,
+    trial: Any = None,
 ) -> float:
-    """Train a GRU sequence model and return RMSE."""
+    """Train a GRU sequence model and return RMSE.
+    
+    Parameters
+    ----------
+    trial : optuna.Trial, optional
+        If provided, enables Optuna pruning: reports validation RMSE after
+        each epoch and raises TrialPruned if the trial should be stopped.
+    """
     import torch
     import torch.nn as nn
 
@@ -276,11 +346,45 @@ def train_gru(
     seq_feats: list[str] = config["seq_features"]
     static_feats: list[str] = config["static_features"]
 
-    X_seq_tr, X_static_tr, y_tr = build_sequences(train_df, seq_feats, static_feats, seq_len)
+    # Split training data into train/val for early stopping + pruning
+    if trial is not None:
+        # Journey-level split for consistency with sequential logic
+        journey_ids = sorted(train_df["journey_id"].unique())
+        n_val = max(1, int(len(journey_ids) * 0.2))
+        val_ids = set(journey_ids[-n_val:])
+        train_for_training = train_df[~train_df["journey_id"].isin(val_ids)].reset_index(drop=True)
+        train_for_val = train_df[train_df["journey_id"].isin(val_ids)].reset_index(drop=True)
+    else:
+        train_for_training = train_df
+        train_for_val = None
+
+    X_seq_tr, X_static_tr, y_tr = build_sequences(train_for_training, seq_feats, static_feats, seq_len)
+    if trial is not None and train_for_val is not None:
+        X_seq_val, X_static_val, y_val = build_sequences(train_for_val, seq_feats, static_feats, seq_len)
+    else:
+        X_seq_val = X_static_val = y_val = None
+
     X_seq_te, X_static_te, y_te = build_sequences(test_df, seq_feats, static_feats, seq_len)
-    X_seq_tr, X_static_tr, X_seq_te, X_static_te = _scale_sequences(
-        X_seq_tr, X_static_tr, X_seq_te, X_static_te
-    )
+    
+    if X_seq_val is not None:
+        X_seq_tr, X_static_tr, X_seq_val, X_static_val = _scale_sequences(
+            X_seq_tr, X_static_tr, X_seq_val, X_static_val
+        )
+        # Re-scale test with train statistics
+        from sklearn.preprocessing import StandardScaler as SS
+        scaler_seq = SS()
+        N_tr, T, F = X_seq_tr.shape
+        scaler_seq.fit(X_seq_tr.reshape(-1, F))
+        N_te = X_seq_te.shape[0]
+        X_seq_te = scaler_seq.transform(X_seq_te.reshape(-1, F)).reshape(N_te, T, F)
+        if X_static_tr.shape[1] > 0:
+            scaler_static = SS()
+            scaler_static.fit(X_static_tr)
+            X_static_te = scaler_static.transform(X_static_te)
+    else:
+        X_seq_tr, X_static_tr, X_seq_te, X_static_te = _scale_sequences(
+            X_seq_tr, X_static_tr, X_seq_te, X_static_te
+        )
 
     n_seq_feats = len(seq_feats)
     n_static = len(static_feats)
@@ -325,6 +429,7 @@ def train_gru(
     )
     criterion = nn.MSELoss()
     deadline = time.time() + budget_seconds
+    epoch = 0
 
     while time.time() < deadline:
         model.train()
@@ -341,6 +446,15 @@ def train_gru(
             optimizer.step()
             scheduler.step()
 
+        # After each epoch, compute validation RMSE and report to Optuna
+        if trial is not None and X_seq_val is not None:
+            val_rmse = _run_nn_eval(model, X_seq_val, X_static_val, y_val, device)
+            trial.report(val_rmse, step=epoch)
+            epoch += 1
+            if trial.should_prune():
+                import optuna
+                raise optuna.TrialPruned()
+
     return _run_nn_eval(model, X_seq_te, X_static_te, y_te, device)
 
 
@@ -349,14 +463,20 @@ def train_gru(
 # ---------------------------------------------------------------------------
 
 
-def run_trial(config: dict, df: Any, budget_seconds: float) -> float:
-    """Train and evaluate one config; return RMSE."""
+def run_trial(config: dict, df: Any, budget_seconds: float, trial: Any = None) -> float:
+    """Train and evaluate one config; return RMSE.
+    
+    Parameters
+    ----------
+    trial : optuna.Trial, optional
+        Trial object; passed to neural trainers for pruning support.
+    """
     family = config["family"]
     if family in ("cnn", "gru"):
         train_df, test_df = sequential_split(df)
         if family == "cnn":
-            return train_cnn(config, train_df, test_df, budget_seconds)
-        return train_gru(config, train_df, test_df, budget_seconds)
+            return train_cnn(config, train_df, test_df, budget_seconds, trial=trial)
+        return train_gru(config, train_df, test_df, budget_seconds, trial=trial)
     else:
         train_df, test_df = tabular_split(df)
-        return train_tabular(config, train_df, test_df, budget_seconds)
+        return train_tabular(config, train_df, test_df, budget_seconds, trial=trial)
