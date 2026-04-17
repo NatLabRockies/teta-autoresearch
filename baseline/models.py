@@ -172,6 +172,13 @@ def _run_nn_eval(model, X_seq_te, X_static_te, y_te, device) -> float:
         x_s = torch.tensor(X_seq_te, dtype=torch.float32).to(device)
         x_st = torch.tensor(X_static_te, dtype=torch.float32).to(device)
         preds = model(x_s, x_st).cpu().numpy()
+
+    # Surface a specific failure mode instead of bubbling up as generic NaN RMSE.
+    if not np.all(np.isfinite(preds)):
+        raise ValueError("non-finite predictions during evaluation")
+    if not np.all(np.isfinite(y_te)):
+        raise ValueError("non-finite targets during evaluation")
+
     return evaluate(y_te, preds)["rmse"]
 
 
@@ -294,9 +301,12 @@ def train_cnn(
     criterion = nn.MSELoss()
     deadline = time.time() + budget_seconds
     epoch = 0
+    train_steps = 0
+    completed_epochs = 0
 
     while time.time() < deadline:
         model.train()
+        steps_this_epoch = 0
         for x_s, x_st, y_b in loader:
             if time.time() >= deadline:
                 break
@@ -305,10 +315,17 @@ def train_cnn(
             y_b = y_b.to(device, non_blocking=True)
             optimizer.zero_grad()
             loss = criterion(model(x_s, x_st), y_b)
+            if not torch.isfinite(loss):
+                raise ValueError("non-finite training loss")
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), params["grad_clip"])
             optimizer.step()
             scheduler.step()
+            train_steps += 1
+            steps_this_epoch += 1
+
+        if steps_this_epoch > 0:
+            completed_epochs += 1
 
         # After each epoch, compute validation RMSE and report to Optuna
         if trial is not None and X_seq_val is not None:
@@ -318,6 +335,11 @@ def train_cnn(
             if trial.should_prune():
                 import optuna
                 raise optuna.TrialPruned()
+
+    if train_steps == 0:
+        raise RuntimeError("terminated before any iteration completed")
+    if completed_epochs == 0:
+        raise RuntimeError("terminated before any epoch completed")
 
     return _run_nn_eval(model, X_seq_te, X_static_te, y_te, device)
 
@@ -434,9 +456,12 @@ def train_gru(
     criterion = nn.MSELoss()
     deadline = time.time() + budget_seconds
     epoch = 0
+    train_steps = 0
+    completed_epochs = 0
 
     while time.time() < deadline:
         model.train()
+        steps_this_epoch = 0
         for x_s, x_st, y_b in loader:
             if time.time() >= deadline:
                 break
@@ -445,10 +470,17 @@ def train_gru(
             y_b = y_b.to(device, non_blocking=True)
             optimizer.zero_grad()
             loss = criterion(model(x_s, x_st), y_b)
+            if not torch.isfinite(loss):
+                raise ValueError("non-finite training loss")
             loss.backward()
             torch.nn.utils.clip_grad_norm_(model.parameters(), params["grad_clip"])
             optimizer.step()
             scheduler.step()
+            train_steps += 1
+            steps_this_epoch += 1
+
+        if steps_this_epoch > 0:
+            completed_epochs += 1
 
         # After each epoch, compute validation RMSE and report to Optuna
         if trial is not None and X_seq_val is not None:
@@ -458,6 +490,11 @@ def train_gru(
             if trial.should_prune():
                 import optuna
                 raise optuna.TrialPruned()
+
+    if train_steps == 0:
+        raise RuntimeError("terminated before any iteration completed")
+    if completed_epochs == 0:
+        raise RuntimeError("terminated before any epoch completed")
 
     return _run_nn_eval(model, X_seq_te, X_static_te, y_te, device)
 

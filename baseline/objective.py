@@ -181,11 +181,20 @@ def make_objective(
             return rmse
         except Exception as exc:
             elapsed = time.time() - t_start
-            print(f"  CRASH after {elapsed:.0f}s: {exc}")
+            err = str(exc)
+            if "terminated before any iteration completed" in err or "terminated before any epoch completed" in err:
+                status = "terminated"
+                print(f"  TERMINATED after {elapsed:.0f}s: {err}")
+            elif "non-finite" in err:
+                status = "numeric_fail"
+                print(f"  NUMERIC_FAIL after {elapsed:.0f}s: {err}")
+            else:
+                status = "crash"
+                print(f"  CRASH after {elapsed:.0f}s: {exc}")
             end_time = datetime.now(timezone.utc).isoformat()
             with timing_path.open("a") as f:
-                f.write(f"trial {trial.number} end {end_time} crash\n")
-            _log(trial.number, 0.0, "crash", desc, trial.params, best_rmse_before)
+                f.write(f"trial {trial.number} end {end_time} {status}\n")
+            _log(trial.number, 0.0, status, desc, trial.params, best_rmse_before)
             return float("inf")
 
     return objective
