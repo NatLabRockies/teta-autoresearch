@@ -29,9 +29,7 @@ LINK_FEATURES = [
 ]
 
 # Static features (not part of the sequence, concatenated after conv)
-STATIC_FEATURES = [
-    "link_position",
-]
+STATIC_FEATURES = []
 
 SEQ_LEN = 5  # current link + 4 previous
 TARGET = "energy_rate_gge"
@@ -111,7 +109,6 @@ def train_model() -> dict:
     raw_delta = df["bearing"] - prev_bearing
     df["bearing_delta"] = (raw_delta + 180) % 360 - 180
     df["abs_bearing_delta"] = df["bearing_delta"].abs()
-    df["link_position"] = df.groupby("journey_id").cumcount()
 
     # Build sequence windows: for each link, get current + 4 previous links' features
     # Shift link features within each journey
@@ -163,9 +160,10 @@ def train_model() -> dict:
     test_seq_flat = seq_scaler.transform(test_seq_flat)
     test_seq = test_seq_flat.reshape(-1, SEQ_LEN, n_feat).transpose(0, 2, 1).astype(np.float32)
 
-    static_scaler = StandardScaler()
-    train_static = static_scaler.fit_transform(train_static).astype(np.float32)
-    test_static = static_scaler.transform(test_static).astype(np.float32)
+    if STATIC_FEATURES:
+        static_scaler = StandardScaler()
+        train_static = static_scaler.fit_transform(train_static).astype(np.float32)
+        test_static = static_scaler.transform(test_static).astype(np.float32)
 
     # PyTorch setup
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
