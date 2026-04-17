@@ -79,7 +79,7 @@ pixi install
 ./run.sh --tag apr17-p1 --n-trials 150 --phase 1 --budget 120
 
 # After Phase 1 completes, extract best trial params for Phase 2:
-pixi run python search.py --extract-phase1 results/search-apr17-p1.db
+./run.sh --extract-phase1 results/search-apr17-p1.db
 # Output will show: --phase2-family rf --phase2-params '{"rf_n_estimators": 1200, ...}'
 
 # Phase 2: 80 trials, ablate features with best family + HPs from Phase 1
