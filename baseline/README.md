@@ -68,7 +68,7 @@ pixi install
 # CMA-ES sampler, 5-minute budget (better for neural families)
 ./run.sh --tag apr15 --n-trials 50 --sampler cmaes --budget 300
 
-# Random baseline (no surrogate model)
+# a true baseline run (no surrogate model)
 ./run.sh --tag apr15-rand --n-trials 200 --sampler random --no-warm-start
 ```
 

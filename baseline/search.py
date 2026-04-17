@@ -17,6 +17,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import Any
 
 import optuna
 
@@ -132,6 +133,15 @@ def parse_args() -> argparse.Namespace:
             "and print them (for phase 2 command)."
         ),
     )
+    p.add_argument(
+        "--format-warm-start",
+        type=Path,
+        default=None,
+        help=(
+            "Path to completed study DB. Extract best trial and format as "
+            "a WARM_START_CONFIGS entry (for copying into search_space.py)."
+        ),
+    )
     return p.parse_args()
 
 
@@ -149,6 +159,11 @@ def main() -> None:
     # If --extract-phase1 is provided, load that study and print best params, then exit
     if args.extract_phase1:
         _extract_and_print_phase1(args.extract_phase1)
+        return
+
+    # If --format-warm-start is provided, load that study and format best trial, then exit
+    if args.format_warm_start:
+        _format_warm_start_config(args.format_warm_start)
         return
 
     results_dir: Path = args.results_dir
@@ -270,6 +285,28 @@ def _print_best(study: optuna.Study) -> None:
         params_json = json.dumps(fixed_params)
         print(f"  --phase2-params '{params_json}'")
 
+    # Print warm-start config entry (can be copied to search_space.py)
+    print("\n=== Warm-start config (for WARM_START_CONFIGS) ===")
+    config: dict[str, Any] = {"family": family}
+    for k, v in best.params.items():
+        if k != "family":
+            config[k] = v
+
+    print("    {")
+    for k, v in config.items():
+        if isinstance(v, str):
+            print(f'        "{k}": "{v}",')
+        elif isinstance(v, bool):
+            print(f'        "{k}": {str(v)},')
+        elif isinstance(v, float):
+            print(f'        "{k}": {v},')
+        else:
+            print(f'        "{k}": {v},')
+    print("    },")
+    print(
+        "\n# Copy this to WARM_START_CONFIGS in search_space.py and update the comment."
+    )
+
 
 def _extract_and_print_phase1(db_path: Path) -> None:
     """Load a phase 1 study and print best trial params for phase 2 usage."""
@@ -281,6 +318,53 @@ def _extract_and_print_phase1(db_path: Path) -> None:
     storage = f"sqlite:///{db_path}"
     study = optuna.load_study(study_name=study_name, storage=storage)
     _print_best(study)
+
+
+def _format_warm_start_config(db_path: Path) -> None:
+    """Load a completed study and format best trial as a WARM_START_CONFIGS entry."""
+    if not db_path.exists():
+        print(f"Error: {db_path} does not exist", file=sys.stderr)
+        sys.exit(1)
+
+    study_name = db_path.stem.replace("search-", "")
+    storage = f"sqlite:///{db_path}"
+    study = optuna.load_study(study_name=study_name, storage=storage)
+
+    finished = [t for t in study.trials if t.state.is_finished() and t.value is not None]
+    if not finished:
+        print("\nNo completed trials yet.", file=sys.stderr)
+        sys.exit(1)
+
+    best = study.best_trial
+    family = best.params.get("family", "unknown")
+
+    # Build the config entry
+    config: dict[str, Any] = {
+        "family": family,
+    }
+
+    # Add all non-family params (feature flags + HP flags)
+    for k, v in best.params.items():
+        if k != "family":
+            config[k] = v
+
+    # Format as Python dict with comment
+    print(f"\n# {study_name}: Best trial {best.number}, RMSE {best.value:.6f}")
+    print("    {")
+    for k, v in config.items():
+        if isinstance(v, str):
+            print(f'        "{k}": "{v}",')
+        elif isinstance(v, bool):
+            print(f'        "{k}": {str(v)},')
+        elif isinstance(v, float):
+            print(f'        "{k}": {v},')
+        else:
+            print(f'        "{k}": {v},')
+    print("    },")
+    print(
+        "\n# To use this config, copy it to WARM_START_CONFIGS in search_space.py"
+        "\n# and increment the comment with the trial number and RMSE."
+    )
 
 
 if __name__ == "__main__":

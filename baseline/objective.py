@@ -64,6 +64,7 @@ def make_objective(
     results_dir.mkdir(parents=True, exist_ok=True)
     tsv_path = results_dir / f"search-{tag}.tsv"
     jsonl_path = results_dir / f"search-{tag}.jsonl"
+    timing_path = results_dir / f"timing-{tag}.log"
 
     if not tsv_path.exists():
         tsv_path.write_text("trial\trmse\tstatus\tdescription\n")
@@ -118,6 +119,13 @@ def make_objective(
 
         best_rmse_before = _best["rmse"]
         print(f"\n[trial {trial.number}] {desc}")
+        
+        # Log trial start
+        from datetime import datetime, timezone
+        start_time = datetime.now(timezone.utc).isoformat()
+        with timing_path.open("a") as f:
+            f.write(f"trial {trial.number} start {start_time}\n")
+        
         t_start = time.time()
         try:
             # For neural families with trial/pruning, run in-process to avoid pickling trial.
@@ -130,6 +138,9 @@ def make_objective(
                 except TrialPruned:
                     elapsed = time.time() - t_start
                     print(f"  PRUNED after {elapsed:.0f}s")
+                    end_time = datetime.now(timezone.utc).isoformat()
+                    with timing_path.open("a") as f:
+                        f.write(f"trial {trial.number} end {end_time} pruned\n")
                     _log(
                         trial.number,
                         float("nan"),
@@ -161,11 +172,19 @@ def make_objective(
             else:
                 status = "discard"
                 print(f"  rmse={rmse:.6f}  elapsed={elapsed:.0f}s")
+            
+            end_time = datetime.now(timezone.utc).isoformat()
+            with timing_path.open("a") as f:
+                f.write(f"trial {trial.number} end {end_time} {status}\n")
+            
             _log(trial.number, rmse, status, desc, trial.params, best_rmse_before)
             return rmse
         except Exception as exc:
             elapsed = time.time() - t_start
             print(f"  CRASH after {elapsed:.0f}s: {exc}")
+            end_time = datetime.now(timezone.utc).isoformat()
+            with timing_path.open("a") as f:
+                f.write(f"trial {trial.number} end {end_time} crash\n")
             _log(trial.number, 0.0, "crash", desc, trial.params, best_rmse_before)
             return float("inf")
 
