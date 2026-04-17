@@ -3,7 +3,7 @@
 # pixi environments
 .pixi/*
 !.pixi/config.toml
-baseline/.pixi
+example/powertrain/tpe/.pixi
 
 __pycache__/
 *.pyc
@@ -17,4 +17,5 @@ __pycache__/
 
 *.egg-info/
 
-baseline/results
+# results
+example/powertrain/**/results
