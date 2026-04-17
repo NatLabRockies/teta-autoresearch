@@ -122,7 +122,7 @@ def load_and_engineer(data_path: str) -> pd.DataFrame:
         df.groupby("journey_id")["abs_bearing_delta"].shift(1)
     )
 
-    # Drop rows that are missing any deep lag (journey-boundary rows)
+    # Drop rows that are missing any of the following features.
     df = df.dropna(
         subset=[
             "prev_speed_mph",
