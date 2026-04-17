@@ -302,4 +302,15 @@ WARM_START_CONFIGS: list[dict] = [
         "rf_max_features": 0.7,
         "rf_max_samples": 0.5,
     },
+    # Best known XGB - apr17/exp14, RMSE 0.006375
+    {
+        "family": "xgb",
+        "xgb_n_estimators": 2000,
+        "xgb_max_depth": 4,
+        "xgb_lr": 0.19497872856607962,
+        "xgb_subsample": 0.9932039881674751,
+        "xgb_colsample_bytree": 0.5092664627127164,
+        "xgb_reg_alpha": 0.002730421280050025,
+        "xgb_reg_lambda": 0.00010917885485543423,
+    },
 ]
