@@ -18,8 +18,6 @@ from typing import Any
 import optuna
 from optuna import TrialPruned
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from feature_pipeline import load_and_engineer
 from models import run_trial
 from search_space import sample_config, sample_config_phase1, sample_config_phase2

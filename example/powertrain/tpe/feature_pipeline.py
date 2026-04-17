@@ -15,7 +15,7 @@ import pandas as pd
 from shapely import wkb
 
 # Make fixed_utils importable from the parent workspace
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from fixed_utils import train_test_split  # noqa: E402
 
 TARGET = "energy_rate_gge"

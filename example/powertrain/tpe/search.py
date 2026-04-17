@@ -10,7 +10,7 @@ Usage
 The study is persisted to SQLite so interrupted runs can be resumed by
 re-running with the same --tag.  Each trial appends one row to the TSV and
 one JSON line to the JSONL, matching the format used by the LLM experiment
-sessions (see ../program.md).
+sessions (see ../../../program.md).
 """
 
 import argparse
@@ -24,13 +24,11 @@ import optuna
 # Suppress Optuna's per-trial info logs — we print our own
 optuna.logging.set_verbosity(optuna.logging.WARNING)
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from objective import make_objective
 from search_space import WARM_START_CONFIGS
 
 _HERE = Path(__file__).parent
-DEFAULT_DATA_PATH = str(_HERE / "../data/processed/2017_Chevy_Bolt.parquet")
+DEFAULT_DATA_PATH = str(_HERE / "../../../data/processed/2017_Chevy_Bolt.parquet")
 DEFAULT_RESULTS_DIR = _HERE / "results"
 
 
@@ -280,8 +278,16 @@ def _print_best(study: optuna.Study) -> None:
     if family in ["rf", "extra_trees", "hgbr", "xgb", "lgbm", "mlp"]:
         print(f"\nFor phase 2, use: --phase2-family {family}")
         # Build the fixed params dict (HP keys only, not feature flags)
-        hp_keys = [k for k in best.params.keys() if k != "family" and not k.startswith("feat_")]
-        fixed_params = {k: best.params[k] for k in hp_keys}
+        hp_keys = [
+            k
+            for k in best.params.keys()
+            if k != "family"
+            and not k.startswith("feat_")
+            and not k.startswith("seq_feat_")
+            and not k.startswith("static_feat_")
+        ]
+
+        fixed_params = _phase2_fixed_params_from_best_params(family, best.params, hp_keys)
         params_json = json.dumps(fixed_params)
         print(f"  --phase2-params '{params_json}'")
 
@@ -318,6 +324,48 @@ def _extract_and_print_phase1(db_path: Path) -> None:
     storage = f"sqlite:///{db_path}"
     study = optuna.load_study(study_name=study_name, storage=storage)
     _print_best(study)
+
+
+def _phase2_fixed_params_from_best_params(
+    family: str,
+    best_params: dict[str, Any],
+    hp_keys: list[str],
+) -> dict[str, Any]:
+    """Convert namespaced Optuna param names into model kwargs for phase 2."""
+    family_prefix = {
+        "rf": "rf_",
+        "extra_trees": "et_",
+        "hgbr": "hgbr_",
+        "xgb": "xgb_",
+        "lgbm": "lgbm_",
+        "mlp": "mlp_",
+        "cnn": "cnn_",
+        "gru": "gru_",
+    }
+    special_key_map = {
+        ("hgbr", "lr"): "learning_rate",
+        ("hgbr", "l2"): "l2_regularization",
+        ("xgb", "lr"): "learning_rate",
+        ("lgbm", "lr"): "learning_rate",
+        ("mlp", "lr"): "learning_rate_init",
+    }
+
+    prefix = family_prefix.get(family, f"{family}_")
+    fixed_params: dict[str, Any] = {}
+
+    for key in hp_keys:
+        value = best_params[key]
+        base_key = key[len(prefix):] if key.startswith(prefix) else key
+        model_key = special_key_map.get((family, base_key), base_key)
+        fixed_params[model_key] = value
+
+    # MLP samples layer topology as (n_layers, layer_size); sklearn expects hidden_layer_sizes.
+    if family == "mlp" and "n_layers" in fixed_params and "layer_size" in fixed_params:
+        n_layers = int(fixed_params.pop("n_layers"))
+        layer_size = int(fixed_params.pop("layer_size"))
+        fixed_params["hidden_layer_sizes"] = [layer_size] * n_layers
+
+    return fixed_params
 
 
 def _format_warm_start_config(db_path: Path) -> None:

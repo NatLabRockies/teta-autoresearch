@@ -1,8 +1,8 @@
-# RouteE Autoresearch — Metaheuristic Baseline
+# RouteE Autoresearch — Metaheuristic TPE
 
 Automated hyperparameter search over a prescribed set of ML/DL model families
 for vehicle energy rate prediction.  This is the metaheuristic counterpart to
-the LLM-driven experiment loop described in `../program.md`.
+the LLM-driven experiment loop described in `../../../program.md`.
 
 ## Approach
 
@@ -36,21 +36,21 @@ Two-phase typically requires fewer total trials than joint search to find compet
 Every trial trains a model within a configurable time budget and evaluates on
 a held-out test set using the same `fixed_utils.evaluate` RMSE metric as the
 LLM session.  Results are persisted to an SQLite study (resumable) and logged
-to TSV + JSONL files in the same format as `../results/`.
+to TSV + JSONL files in the same format as `../../../results/`.
 
 The first two trials are seeded from the best known configurations in
-`../learnings.md` (CNN RMSE 0.006126, RF RMSE 0.006400) to give Optuna's
+`../../../learnings.md` (CNN RMSE 0.006126, RF RMSE 0.006400) to give Optuna's
 surrogate model a strong prior (joint search and Phase 1 only; Phase 2 skips warm-start).
 
 ## Prerequisites
 
 [pixi](https://prefix.dev/docs/pixi/overview) must be installed.  The
-`baseline/` directory has its own `pixi.toml` that adds Optuna, XGBoost, and
+`example/powertrain/tpe/` directory has its own `pixi.toml` that adds Optuna, XGBoost, and
 LightGBM on top of the parent workspace's packages.
 
 ```bash
-# Install the baseline environment (one-time)
-cd baseline/
+# Install the tpe environment (one-time)
+cd example/powertrain/tpe/
 pixi install
 ```
 
@@ -99,7 +99,7 @@ pixi install
 | `--sampler` | `tpe` | `tpe`, `cmaes`, or `random` |
 | `--budget` | 120 | Per-trial training time in seconds |
 | `--parallel` | 1 | Concurrent trials (share same SQLite DB across processes) |
-| `--data-path` | `../data/processed/2017_Chevy_Bolt.parquet` | Parquet input |
+| `--data-path` | `../../../data/processed/2017_Chevy_Bolt.parquet` | Parquet input |
 | `--results-dir` | `results/` | Output directory |
 | `--no-warm-start` | false | Skip seeding known-good configs as trial 0 and 1 |
 | `--phase` | None | Search phase: `1` (tune family+HPs) or `2` (ablate features). Omit for joint search |
@@ -118,13 +118,13 @@ results/
   search-<tag>.jsonl   per-trial structured log (one JSON line each)
 ```
 
-The TSV and JSONL formats match the LLM session logs in `../results/` for
+The TSV and JSONL formats match the LLM session logs in `../../../results/` for
 direct comparison.
 
 ## File structure
 
 ```
-baseline/
+tpe/
   pixi.toml            Python environment (optuna, xgboost, lightgbm + torch + sklearn)
   run.sh               Convenience wrapper (forwards args to search.py)
   feature_pipeline.py  Data loading, feature engineering, sequence windowing
@@ -162,7 +162,7 @@ playing field.
 
 ## Comparing with LLM sessions
 
-The best known RMSE from `../learnings.md` at session start:
+The best known RMSE from `../../../learnings.md` at session start:
 
 | Config | RMSE |
 |---|---|

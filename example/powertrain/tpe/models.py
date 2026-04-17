@@ -15,7 +15,7 @@ from typing import Any
 import numpy as np
 from sklearn.preprocessing import StandardScaler  # type: ignore[import-untyped]
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
 from fixed_utils import evaluate  # noqa: E402
 
 from feature_pipeline import (
