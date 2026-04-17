@@ -71,17 +71,39 @@ Accumulated findings across experiment sessions. Read this at the start of every
 - **LR 5e-3** too aggressive even with OneCycleLR. 3e-3 confirmed as sweet spot.
 - **Signed bearing_delta** as sequence feature adds noise; abs_bearing_delta already captures turn severity.
 
-### Best known configuration (apr14/exp22, RMSE 0.006126)
+### Neural network findings (apr16 session)
+
+- **cum_backward_miles** — cumulative backward distance as a per-timestep feature (0 for current link, increasing for lookback). Gives CNN distance context for variable-length links. 0.42% improvement.
+- **link_position removal** — domain constraint (not available at inference). Only 0.16% cost, negligible.
+- **Removing head dropout** improves RMSE by 0.20% — with only 15-16 epochs, dropout slows convergence more than it regularizes. Model is compute-limited, not overfitting.
+- **Simpler head (128->1 instead of 256->128->1)** improves by 0.31% — fewer params means faster epochs (16 vs 13). The conv output doesn't need a deep head.
+- **max_lr=4e-3** (up from 3e-3) improves 0.10% — with more epochs from simpler architecture, slightly higher LR helps.
+- **Virtual fixed-distance links FAILED badly.** Tried resampling link lookback at fixed distance intervals (10m and 80m per virtual link). Both 100m and 800m total lookback were 8-31% worse. Piecewise-constant interpolation creates redundant features (multiple virtual links from same actual link = constant values). Real link boundaries carry important transition information that resampling destroys.
+- **64 conv channels** underfits — 128 is the right capacity even with simpler head.
+- **SGD momentum** 119% worse than AdamW — far too slow to converge in 15 epochs. Adaptive LR essential.
+- **OneCycleLR epochs must match actual training** — setting epochs=20 when training 15 keeps LR too high, hurting generalization.
+- **Kernel size 5 first layer** nearly tied but marginally slower — with 3 layers of k=3, receptive field already covers seq_len=5.
+- **Linear head (no hidden layer)** too simple — conv output needs at least one nonlinear combination.
+- **LayerNorm, BatchNorm, Dropout1d in conv** all hurt — inputs are pre-normalized, model needs every epoch for convergence.
+- **Channel attention (squeeze-and-excitation)** no benefit — too few channels/timesteps for attention to help.
+- **Input noise augmentation** hurts — another regularization technique that needs many epochs to show benefit.
+- **n_points (geometry vertex count)** no signal for CNN either (consistent with RF).
+- **cum_backward_time** redundant with cum_backward_miles (correlated through speed).
+- **Target normalization** no benefit — AdamW adapts to target scale.
+- **torch.compile** incompatible with ProcessPoolExecutor (pickle error).
+- **DataLoader num_workers>0** causes OneCycleLR step overflow inside ProcessPoolExecutor.
+
+### Best known configuration (apr16/exp18, RMSE 0.006099)
 
 - 1D-CNN: 3 Conv1d layers (128 channels, kernel_size=3, padding=1), ReLU activations
-- Head: Linear(640+1, 256) -> ReLU -> Dropout(0.1) -> Linear(256, 128) -> ReLU -> Linear(128, 1)
-- Sequence: 5-link window (current + 4 previous), 6 features per link
-- Link features: speed_mph, grade_percent, miles, time_seconds, sinuosity, abs_bearing_delta
-- Static features: link_position
-- StandardScaler normalization on both sequence and static features
-- AdamW optimizer, OneCycleLR max_lr=3e-3, weight_decay=1e-4, gradient clipping max_norm=1.0
+- Head: Linear(640, 128) -> ReLU -> Linear(128, 1) — no dropout
+- Sequence: 5-link window (current + 4 previous), 7 features per link
+- Link features: speed_mph, grade_percent, miles, time_seconds, sinuosity, abs_bearing_delta, cum_backward_miles
+- No static features (link_position removed per domain constraint)
+- StandardScaler normalization on sequence features
+- AdamW optimizer, OneCycleLR max_lr=4e-3, weight_decay=1e-4, gradient clipping max_norm=1.0
 - Batch size 2048, MSE loss
-- ~13 epochs in 10-minute budget
+- ~16 epochs in 10-minute budget
 
 ### Best known RF configuration (apr13b/exp20, RMSE 0.006400)
 
