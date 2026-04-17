@@ -57,7 +57,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--budget",
         type=float,
-        default=120.0,
+        default=600.0,
         help="Per-trial training wall-clock budget in seconds.",
     )
     p.add_argument(
@@ -74,6 +74,15 @@ def parse_args() -> argparse.Namespace:
         "--data-path",
         default=DEFAULT_DATA_PATH,
         help="Path to the processed parquet file.",
+    )
+    p.add_argument(
+        "--families",
+        default=None,
+        help=(
+            "Comma-delimited list of model families to search "
+            f"(choices: {', '.join(__import__('search_space').ALL_FAMILIES)}). "
+            "Defaults to all families."
+        ),
     )
     p.add_argument(
         "--no-warm-start",
@@ -101,6 +110,9 @@ def main() -> None:
     args = parse_args()
     results_dir: Path = args.results_dir
     results_dir.mkdir(parents=True, exist_ok=True)
+    print("CONFIGURATION:")
+    for k, v in vars(args).items():
+        print(f"  {k}: {v}")
 
     storage_path = results_dir / f"search-{args.tag}.db"
     storage = f"sqlite:///{storage_path}"
@@ -121,10 +133,27 @@ def main() -> None:
         _print_best(study)
         return
 
-    # Enqueue warm-start configs as the very first trials
+    families: list[str] | None = None
+    if args.families:
+        from search_space import ALL_FAMILIES
+        families = [f.strip() for f in args.families.split(",")]
+        invalid = [f for f in families if f not in ALL_FAMILIES]
+        if invalid:
+            print(
+                f"Error: unknown families: {invalid}. "
+                f"Valid choices: {ALL_FAMILIES}",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    # Enqueue warm-start configs as the very first trials, filtered to active families
     if not args.no_warm_start and completed == 0:
-        print(f"Enqueuing {len(WARM_START_CONFIGS)} warm-start configs from learnings.md …")
-        for cfg in WARM_START_CONFIGS:
+        warm = [
+            cfg for cfg in WARM_START_CONFIGS
+            if families is None or cfg.get("family") in families
+        ]
+        print(f"Enqueuing {len(warm)} warm-start configs from learnings.md …")
+        for cfg in warm:
             study.enqueue_trial(cfg)
 
     objective = make_objective(
@@ -132,6 +161,7 @@ def main() -> None:
         budget_seconds=args.budget,
         results_dir=results_dir,
         tag=args.tag,
+        families=families,
     )
 
     print(

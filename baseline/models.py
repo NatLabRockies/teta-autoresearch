@@ -49,32 +49,53 @@ def train_tabular(
         X_train = scaler.fit_transform(X_train)
         X_test = scaler.transform(X_test)
 
-    if family == "rf":
-        from sklearn.ensemble import RandomForestRegressor  # type: ignore[import-untyped]
-        model = RandomForestRegressor(**model_params)
-    elif family == "extra_trees":
-        from sklearn.ensemble import ExtraTreesRegressor  # type: ignore[import-untyped]
-        model = ExtraTreesRegressor(**model_params)
+    if family in ("rf", "extra_trees"):
+        from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor  # type: ignore[import-untyped]
+        target_n = model_params["n_estimators"]
+        base_params = {**model_params, "n_estimators": 0, "warm_start": True}
+        cls = RandomForestRegressor if family == "rf" else ExtraTreesRegressor
+        model = cls(**base_params)
+        deadline = time.time() + budget_seconds
+        batch = 50
+        while model.n_estimators < target_n and time.time() < deadline:
+            model.n_estimators = min(model.n_estimators + batch, target_n)
+            model.fit(X_train, y_train)
+        if model.n_estimators < target_n:
+            print(f"  [budget] stopped at {model.n_estimators}/{target_n} trees")
     elif family == "hgbr":
         from sklearn.ensemble import HistGradientBoostingRegressor  # type: ignore[import-untyped]
         model = HistGradientBoostingRegressor(**model_params)
+        t0 = time.time()
+        model.fit(X_train, y_train)
+        elapsed = time.time() - t0
+        if elapsed > budget_seconds:
+            print(f"  [warn] training took {elapsed:.0f}s, exceeded budget {budget_seconds:.0f}s")
     elif family == "xgb":
         from xgboost import XGBRegressor  # type: ignore[import-untyped]
         model = XGBRegressor(**model_params)
+        t0 = time.time()
+        model.fit(X_train, y_train)
+        elapsed = time.time() - t0
+        if elapsed > budget_seconds:
+            print(f"  [warn] training took {elapsed:.0f}s, exceeded budget {budget_seconds:.0f}s")
     elif family == "lgbm":
         from lightgbm import LGBMRegressor  # type: ignore[import-untyped]
         model = LGBMRegressor(**model_params)
+        t0 = time.time()
+        model.fit(X_train, y_train)
+        elapsed = time.time() - t0
+        if elapsed > budget_seconds:
+            print(f"  [warn] training took {elapsed:.0f}s, exceeded budget {budget_seconds:.0f}s")
     elif family == "mlp":
         from sklearn.neural_network import MLPRegressor  # type: ignore[import-untyped]
         model = MLPRegressor(**model_params)
+        t0 = time.time()
+        model.fit(X_train, y_train)
+        elapsed = time.time() - t0
+        if elapsed > budget_seconds:
+            print(f"  [warn] training took {elapsed:.0f}s, exceeded budget {budget_seconds:.0f}s")
     else:
         raise ValueError(f"Unknown tabular family: {family}")
-
-    t0 = time.time()
-    model.fit(X_train, y_train)
-    elapsed = time.time() - t0
-    if elapsed > budget_seconds:
-        print(f"  [warn] training took {elapsed:.0f}s, exceeded budget {budget_seconds:.0f}s")
 
     preds = model.predict(X_test)
     return evaluate(y_test, preds)["rmse"]

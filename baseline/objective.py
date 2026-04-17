@@ -7,8 +7,11 @@ experiment session (program.md).
 """
 
 import json
+import math
 import sys
 import time
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import TimeoutError as _TimeoutError
 from pathlib import Path
 from typing import Any
 
@@ -26,6 +29,7 @@ def make_objective(
     budget_seconds: float,
     results_dir: Path,
     tag: str,
+    families: list[str] | None = None,
 ) -> Any:
     """Return an Optuna objective with pre-loaded data.
 
@@ -66,7 +70,7 @@ def make_objective(
             f.write(json.dumps(record) + "\n")
 
     def objective(trial: optuna.Trial) -> float:
-        config = sample_config(trial)
+        config = sample_config(trial, families=families)
         family = config["family"]
         feat_key = "seq_features" if family in ("cnn", "gru") else "features"
         features_str = ",".join(config.get(feat_key, []))
@@ -75,7 +79,15 @@ def make_objective(
         print(f"\n[trial {trial.number}] {desc}")
         t_start = time.time()
         try:
-            rmse = run_trial(config, df, budget_seconds)
+            with ProcessPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(run_trial, config, df, budget_seconds)
+                try:
+                    rmse = future.result(timeout=budget_seconds)
+                except _TimeoutError:
+                    future.cancel()
+                    raise RuntimeError(f"trial timed out after {budget_seconds:.0f}s")
+            if not math.isfinite(rmse):
+                raise ValueError(f"non-finite RMSE: {rmse}")
             elapsed = time.time() - t_start
             print(f"  rmse={rmse:.6f}  elapsed={elapsed:.0f}s")
             _log(trial.number, rmse, "evaluated", desc, trial.params)

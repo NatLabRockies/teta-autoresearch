@@ -179,9 +179,10 @@ def _sample_seq_features(trial: optuna.Trial) -> tuple[list[str], list[str]]:
 # ---------------------------------------------------------------------------
 
 
-def sample_config(trial: optuna.Trial) -> dict:
+def sample_config(trial: optuna.Trial, families: list[str] | None = None) -> dict:
     """Sample a complete experiment config for one Optuna trial."""
-    family = trial.suggest_categorical("family", ALL_FAMILIES)
+    family_list = families if families is not None else ALL_FAMILIES
+    family = trial.suggest_categorical("family", family_list)
     config: dict = {"family": family}
 
     if family in SEQUENTIAL_FAMILIES:
