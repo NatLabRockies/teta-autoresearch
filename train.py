@@ -2,13 +2,13 @@ import time
 import math
 import pandas as pd
 import numpy as np
-from shapely import wkb
+from shapely import wkb  # type: ignore[import-untyped]
 from concurrent.futures import ProcessPoolExecutor, TimeoutError
 
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader, TensorDataset
-from sklearn.preprocessing import StandardScaler
+from sklearn.preprocessing import StandardScaler  # type: ignore[import-untyped]
 
 from fixed_utils import (
     evaluate,
@@ -29,17 +29,34 @@ LINK_FEATURES = [
 ]
 
 # Static features (not part of the sequence, concatenated after conv)
-STATIC_FEATURES = []
+STATIC_FEATURES: list[str] = []
 
 SEQ_LEN = 5  # current link + 4 previous
 TARGET = "energy_rate_gge"
 
 # --- data config ---
-CONFIG = {
-    "name": "2017_Chevy_Bolt",
-    "data_path": "data/processed/2017_Chevy_Bolt.parquet",
-    "energy_type": "bev",
+# Registry of powertrain types. Each session targets exactly one.
+POWERTRAINS = {
+    "bev": {
+        "name": "2017_Chevy_Bolt",
+        "data_path": "data/processed/2017_Chevy_Bolt.parquet",
+        "energy_type": "bev",
+    },
+    "ice": {
+        "name": "2016_Toyota_Camry",
+        "data_path": "data/processed/2016_Toyota_Camry.parquet",
+        "energy_type": "ice",
+    },
+    "phev": {
+        # Filled in when PHEV raw data lands in data/processed/.
+        "name": "TBD_PHEV",
+        "data_path": "data/processed/TBD_PHEV.parquet",
+        "energy_type": "phev",
+    },
 }
+
+POWERTRAIN = "bev"  # session selector — the only vehicle-related line to change
+CONFIG = POWERTRAINS[POWERTRAIN]
 
 
 class Conv1DModel(nn.Module):
@@ -95,8 +112,11 @@ def train_model() -> dict:
             sinuosity = 1.0
         else:
             road_len = sum(
-                math.sqrt((coords[i+1][0]-coords[i][0])**2 + (coords[i+1][1]-coords[i][1])**2)
-                for i in range(len(coords)-1)
+                math.sqrt(
+                    (coords[i + 1][0] - coords[i][0]) ** 2
+                    + (coords[i + 1][1] - coords[i][1]) ** 2
+                )
+                for i in range(len(coords) - 1)
             )
             sinuosity = road_len / straight
         bearing = math.atan2(dx, dy) * 180 / math.pi
@@ -118,7 +138,7 @@ def train_model() -> dict:
             df[col_name] = df.groupby("journey_id")[feat].shift(lag)
 
     # Drop rows without full sequence history
-    lag_cols = [f"{feat}_lag{SEQ_LEN-1}" for feat in LINK_FEATURES]
+    lag_cols = [f"{feat}_lag{SEQ_LEN - 1}" for feat in LINK_FEATURES]
     df = df.dropna(subset=lag_cols + ["bearing_delta"])
 
     train_df, test_df = train_test_split(df, test_size=0.2, random_seed=42)
@@ -143,8 +163,8 @@ def train_model() -> dict:
     train_static = train_df[STATIC_FEATURES].values.astype(np.float32)
     test_static = test_df[STATIC_FEATURES].values.astype(np.float32)
 
-    y_train = train_df[TARGET].values.astype(np.float32)
-    y_test = test_df[TARGET].values.astype(np.float32)
+    y_train = train_df[TARGET].to_numpy(dtype=np.float32)
+    y_test = test_df[TARGET].to_numpy(dtype=np.float32)
 
     # Normalize: fit on train, transform both
     # Normalize sequence features per-feature across all timesteps
@@ -155,10 +175,16 @@ def train_model() -> dict:
     seq_scaler.fit(train_seq_flat)
     # Transform
     train_seq_flat = seq_scaler.transform(train_seq_flat)
-    train_seq = train_seq_flat.reshape(-1, SEQ_LEN, n_feat).transpose(0, 2, 1).astype(np.float32)
+    train_seq = (
+        train_seq_flat.reshape(-1, SEQ_LEN, n_feat)
+        .transpose(0, 2, 1)
+        .astype(np.float32)
+    )
     test_seq_flat = test_seq.transpose(0, 2, 1).reshape(-1, n_feat)
     test_seq_flat = seq_scaler.transform(test_seq_flat)
-    test_seq = test_seq_flat.reshape(-1, SEQ_LEN, n_feat).transpose(0, 2, 1).astype(np.float32)
+    test_seq = (
+        test_seq_flat.reshape(-1, SEQ_LEN, n_feat).transpose(0, 2, 1).astype(np.float32)
+    )
 
     if STATIC_FEATURES:
         static_scaler = StandardScaler()
@@ -173,13 +199,18 @@ def train_model() -> dict:
         torch.from_numpy(train_static),
         torch.from_numpy(y_train),
     )
-    train_loader = DataLoader(train_dataset, batch_size=2048, shuffle=True, num_workers=0)
+    train_loader = DataLoader(
+        train_dataset, batch_size=2048, shuffle=True, num_workers=0
+    )
 
     model = Conv1DModel(n_feat, len(STATIC_FEATURES), SEQ_LEN).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=3e-3, weight_decay=1e-4)
     steps_per_epoch = len(train_loader)
     scheduler = torch.optim.lr_scheduler.OneCycleLR(
-        optimizer, max_lr=3e-3, steps_per_epoch=steps_per_epoch, epochs=15,
+        optimizer,
+        max_lr=3e-3,
+        steps_per_epoch=steps_per_epoch,
+        epochs=15,
     )
     loss_fn = nn.MSELoss()
 

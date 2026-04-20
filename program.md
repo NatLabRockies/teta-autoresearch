@@ -2,24 +2,34 @@
 
 This is an experiment to research better ML models. See `domain.md` for domain context and constraints.
 
+Each session targets exactly **one partition** of the domain. The partition axis, its valid values, and all concrete naming rules derived from it are defined in `domain.md → Session Partitioning`. Branches, tags, results files, and the persistent cross-session best pointer are all namespaced by the chosen partition value (`<variant>`) so lines of inquiry don't collide. Cross-partition lessons live in the shared `learnings.md → Cross-cutting insights`.
+
+Throughout this document, `<variant>` is the partition value chosen at session start (see `domain.md → Session Partitioning`), `<date>` is the date-shard, and `<tag>` is their combination `<variant>-<date>`.
+
 ## Setup
 
 To set up a new experiment, work with the user to:
 
-1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar5`). The branch `routee-autoresearch/<tag>` must not already exist — this is a fresh run.
+1. **Pick the partition**: consult `domain.md → Session Partitioning` for the axis name and valid values, and pick a `<variant>`. This determines which dataset, which persistent `<variant>/best` pointer, and which `learnings.md` subsection the session works off. `train.py` has a single constant (named per `domain.md`) that selects the partition.
+1. **Agree on a run tag**: propose `<variant>-<date>` per the tag format in `domain.md → Session Partitioning`. The branch `routee-autoresearch/<tag>` must not already exist — this is a fresh run.
 1. **Create the branch**: `git checkout -b routee-autoresearch/<tag>` from current main.
 1. **Read the in-scope files**: The repo is small. Read these files for full context:
-   - `learnings.md` - Accumulated findings from previous experiment sessions. Use this to avoid repeating dead ends and build on what works.
+   - `learnings.md` - Accumulated findings. **Read the "Cross-cutting insights" section plus the subsection for your chosen `<variant>`** (see `domain.md → Session Partitioning` for subsection naming). Use this to avoid repeating dead ends and build on what works.
    - `seed.md` - Notes and ideas for this experiment session. Do not modify.
-   - `domain.md` - Explanation of the domain context and constraints. Do not modify.
+   - `domain.md` - Explanation of the domain context, constraints, and session partitioning rules. Do not modify.
    - `fixed_utils.py` — fixed constants, data prep, evaluation. Do not modify.
-   - `train.py` — A file you modify. Model architecture, optimizer, training.
-1. **Initialize results files**: Create all of these with just their headers/empty:
-   - `results/results-<tag>.tsv` — header row only
-   - `results/experiments-<tag>.jsonl` — empty file
-   - `results/exp-timing-<tag>.log` — empty file
-1. **Create a session plan**: You MUST create `plans/plan-<tag>.md` using the template at `templates/plan-template.md`. Spend time researching the current state of knowledge, reviewing `learnings.md` and `seed.md`, then fill in session goals, planned experiments, and constraints. This file is updated throughout the session as a progress log.
-1. **Run the baseline**: Run `train.py` as-is and record the baseline result. Then tag:
+   - `train.py` — A file you modify. Model architecture, optimizer, training. Set the partition-selector constant (see `domain.md`) to the chosen `<variant>` here.
+1. **Seed `train.py` from the best known config for this partition**:
+   - If `<variant>/best` exists: `git checkout <variant>/best -- train.py`, then set the partition-selector constant at the top to the chosen `<variant>`.
+   - If `<variant>/best` does NOT exist (first session for this partition): seed from the fallback ancestor defined in `domain.md → Session Partitioning`. If even that doesn't exist, use the current `main`'s `train.py` as-is. Then set the partition-selector constant to the chosen `<variant>`.
+1. **Initialize results files** under the partition subdirectory (see `domain.md → Session Partitioning` for the path). Create all of these with just their headers/empty:
+   - `results/<variant>/results-<date>.tsv` — header row only
+   - `results/<variant>/experiments-<date>.jsonl` — empty file
+   - `results/<variant>/exp-timing-<date>.log` — empty file
+
+   (The `<date>` portion matches the `<date>` piece of `<tag>`.)
+1. **Create a session plan**: You MUST create `plans/plan-<tag>.md` using the template at `templates/plan-template.md`. Spend time researching the current state of knowledge, reviewing the cross-cutting section and your `<variant>`'s subsection of `learnings.md` and `seed.md`, then fill in session goals, planned experiments, and constraints. This file is updated throughout the session as a progress log.
+1. **Run the baseline**: Run `train.py` as-is (with the partition-selector constant set correctly) and record the baseline result. Then tag:
    ```
    git tag <tag>/baseline
    git tag <tag>/exp0
@@ -112,8 +122,8 @@ For every experiment, append one JSON line to `results/experiments-<tag>.jsonl`.
 - `commit`: short hash of the experiment commit (string)
 - `parent_best`: short hash of the current best commit before this experiment (string)
 - `status`: `keep`, `discard`, or `crash` (string)
-- `rmse`: observed RMSE (float, use 0.0 for crashes). For multi-vehicle, use an object: `{"bolt": 0.008, "camry": 0.015}`
-- `best_rmse_before`: the best RMSE before this experiment (float or object)
+- `rmse`: observed RMSE (float, use 0.0 for crashes)
+- `best_rmse_before`: the best RMSE before this experiment (float)
 - `delta_pct`: percent change from best (-5.0 means 5% improvement). Use `null` for crashes
 - `description`: what was changed (same as TSV, 1 line)
 - `hypothesis`: what you expect to happen and why — write BEFORE running (1-2 sentences)
@@ -125,35 +135,39 @@ Keep hypothesis/observation/reasoning concise — 1-2 sentences each. This is a 
 
 ## Logging results
 
-When an experiment is done, log it to BOTH:
+When an experiment is done, log it to BOTH (files live under the partition subdir per `domain.md`, using only the `<date>` portion of the session tag):
 
-1. `results/results-<tag>.tsv` — the quick-glance summary (tab-separated, NOT comma-separated)
-2. `results/experiments-<tag>.jsonl` — the structured reasoning record (one JSON line, appended)
+1. `results/<variant>/results-<date>.tsv` — the quick-glance summary (tab-separated, NOT comma-separated)
+2. `results/<variant>/experiments-<date>.jsonl` — the structured reasoning record (one JSON line, appended)
 
 The TSV has a header row with columns for: git commit hash (short, 7 chars), metric columns (`rmse`), status (`keep`, `discard`, or `crash`), and a short text description. Use 0.000000 for crashes.
 
 ## Git Tags
 
-Every experiment session uses three tiers of git tags for history tracking and forking:
+Every experiment session uses three tiers of session-scoped tags plus a persistent cross-session pointer per partition.
 
 **Tier 1 — Every experiment (automatic):**
 
-- `<tag>/expN` — lightweight tag on every experiment commit, created before running. These make every experiment addressable for forking.
+- `<tag>/expN` — lightweight tag on every experiment commit, created before running. These make every experiment addressable for forking. (Where `<tag>` is the full `<variant>-<date>` form.)
 
-**Tier 2 — State tracking (automatic):**
+**Tier 2 — Session state tracking (automatic):**
 
 - `<tag>/baseline` — after the first baseline run, never moved
-- `<tag>/best` — force-updated (`git tag -f`) to the latest best-performing commit after each improvement
+- `<tag>/best` — force-updated (`git tag -f`) to the latest best-performing commit of this session after each improvement
 
 **Tier 3 — Milestones (judgment call):**
 
-- `<tag>/milestone-<desc>` — for breakthroughs (>10% improvement, new approach working, qualitative shift). Example: `apr2/milestone-link-sequence`
+- `<tag>/milestone-<desc>` — for breakthroughs (>10% improvement, new approach working, qualitative shift).
+
+**Tier 4 — Cross-session per-partition best (persistent):**
+
+- `<variant>/best` — force-updated (`git tag -f`) at session end (or whenever this session's `<tag>/best` beats the prior `<variant>/best`). This is the authoritative "current best model for this partition" pointer across all sessions. See `domain.md → Session Partitioning` for the concrete `<variant>` values.
 
 Push tags with: `git push --tags`
 
 ## The experiment loop
 
-The experiment runs on a dedicated branch (e.g. `routee-autoresearch/mar5`).
+The experiment runs on a dedicated branch `routee-autoresearch/<tag>`.
 
 LOOP FOREVER:
 
@@ -186,9 +200,9 @@ LOOP FOREVER:
 
 When you want to explore a divergent direction from a previous experiment without abandoning the current branch:
 
-1. **Identify the fork point**: Find the tag `<tag>/expN` you want to fork from
+1. **Identify the fork point**: Find the tag `<tag>/expN` you want to fork from (same `<variant>` — forks stay within a partition's line of inquiry; see `domain.md`)
 2. **Create a new branch**: `git checkout -b routee-autoresearch/<tag>-fork-<desc> <tag>/expN`
-3. **Initialize new results files**: Create fresh TSV, JSONL, and timing log for the fork
+3. **Initialize new results files**: Create fresh TSV, JSONL, and timing log under `results/<variant>/` for the fork
 4. **Create a fork plan**: Create `plans/plan-<tag>-fork-<desc>.md` noting the fork point and rationale
 5. **Continue the experiment loop** on the new branch
 
@@ -203,16 +217,19 @@ The original branch is untouched. The fork starts from the exact code state of e
 
 ## Cross-session learnings
 
-`learnings.md` on the `main` branch accumulates insights across sessions. It is structured by vehicle, with sections for what works, what doesn't, best known configurations, and open questions.
+`learnings.md` on the `main` branch accumulates insights across sessions and across all `<variant>` values. It is structured as: a shared **Cross-cutting insights** section at the top (pipeline/optimization/data-representation truths that apply to every partition) followed by per-`<variant>` subsections (see `domain.md → Session Partitioning` for the list), each with what works / what doesn't / best known configuration / open hypotheses.
 
-**At session start:** Read `learnings.md` as part of the in-scope files. Use it to avoid repeating known dead ends and to build on proven approaches.
+**At session start:** Read the Cross-cutting section plus your `<variant>`'s subsection. Use them to avoid repeating known dead ends and to build on proven approaches. When a new partition session starts, the cross-cutting section is the concrete mechanism through which lessons flow between lines of inquiry.
 
 **During the session (~every 20 experiments):** Update `learnings.md` with new findings:
 
 ```
 git stash
 git checkout main
-# update learnings.md
+# update learnings.md — write to the correct subsection:
+#   - Finding is about the training pipeline, optimizer, or data representation
+#     and not specific to this partition? -> Cross-cutting insights
+#   - Finding is specific to this partition's domain-specific signal? -> <variant> subsection
 git add learnings.md
 git commit -m "update learnings from <tag> session"
 git push
@@ -220,4 +237,4 @@ git checkout routee-autoresearch/<tag>
 git stash pop
 ```
 
-**At session end:** Do a final learnings update before stopping.
+**At session end:** Do a final learnings update before stopping. Also update the persistent `<variant>/best` tag to this session's final best commit if it beats the prior `<variant>/best` (or create it if this is the first session for this partition), and push tags.
