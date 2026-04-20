@@ -3,6 +3,7 @@
 # pixi environments
 .pixi/*
 !.pixi/config.toml
+example/powertrain/tpe/.pixi
 
 __pycache__/
 *.pyc
@@ -15,3 +16,6 @@ __pycache__/
 .ipynb_checkpoints/
 
 *.egg-info/
+
+# results
+example/powertrain/**/results
