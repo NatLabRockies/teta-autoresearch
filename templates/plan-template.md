@@ -2,9 +2,17 @@
 
 ## Starting point
 
-- Branch: `routee-autoresearch/<tag>`
-- Forked from: `main` at `<commit>`
-- Best known RMSE: <from learnings.md or fresh baseline>
+- Powertrain: `<bev|ice|phev>`
+- Branch: `routee-autoresearch/<tag>` (where `<tag>` is `<powertrain>-<date>`)
+- Forked from: `<powertrain>/best` at `<commit>` (or `bev/best` / `main` if no prior best exists for this powertrain)
+- Best known RMSE for this powertrain: <from learnings.md or fresh baseline>
+
+## Cross-cutting insights consulted
+
+List the specific items from `learnings.md → Cross-cutting insights` you're carrying into this session (e.g. "MSE aligns with RMSE, BatchNorm hurts under short budget, predict energy_rate not energy_gge").
+
+- <insight 1 and how it shapes your baseline>
+- <insight 2>
 
 ## Session goals
 
@@ -19,8 +27,8 @@
 
 ## Constraints / focus areas
 
-- <any session-specific constraints, e.g. "only Bolt this session">
-- <focus areas from seed.md or learnings.md>
+- <any session-specific constraints>
+- <focus areas from seed.md, powertrain-specific hypotheses from learnings.md>
 
 ## Progress log
 

@@ -1,10 +1,14 @@
 import time
 import math
 import pandas as pd
-from shapely import wkb
+import numpy as np
+from shapely import wkb  # type: ignore[import-untyped]
 from concurrent.futures import ProcessPoolExecutor, TimeoutError
 
-from sklearn.ensemble import RandomForestRegressor  # type: ignore[import-untyped]
+import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader, TensorDataset
+from sklearn.preprocessing import StandardScaler  # type: ignore[import-untyped]
 
 from fixed_utils import (
     evaluate,
@@ -13,34 +17,78 @@ from fixed_utils import (
 
 # --- shared defaults ---
 TIME_BUDGET_SECONDS = 10 * 60
-FEATURES = [
+
+# Per-link features that each timestep in the sequence has
+LINK_FEATURES = [
     "speed_mph",
     "grade_percent",
     "miles",
-    "prev_speed_mph",
-    "speed_delta",
-    "prev_miles",
-    "grade_delta",
-    "prev2_speed_mph",
-    "prev3_speed_mph",
-    "prev4_speed_mph",
     "time_seconds",
     "sinuosity",
     "abs_bearing_delta",
-    "link_position",
-    "prev_sinuosity",
-    "prev_abs_bearing_delta",
-    "speed_accel",
-    "prev_time_seconds",
 ]
+
+# Static features (not part of the sequence, concatenated after conv)
+STATIC_FEATURES: list[str] = []
+
+SEQ_LEN = 5  # current link + 4 previous
 TARGET = "energy_rate_gge"
 
 # --- data config ---
-CONFIG = {
-    "name": "2017_Chevy_Bolt",
-    "data_path": "data/processed/2017_Chevy_Bolt.parquet",
-    "energy_type": "bev",
+# Registry of powertrain types. Each session targets exactly one.
+POWERTRAINS = {
+    "bev": {
+        "name": "2017_Chevy_Bolt",
+        "data_path": "data/processed/2017_Chevy_Bolt.parquet",
+        "energy_type": "bev",
+    },
+    "ice": {
+        "name": "2016_Toyota_Camry",
+        "data_path": "data/processed/2016_Toyota_Camry.parquet",
+        "energy_type": "ice",
+    },
+    "phev": {
+        # Filled in when PHEV raw data lands in data/processed/.
+        "name": "TBD_PHEV",
+        "data_path": "data/processed/TBD_PHEV.parquet",
+        "energy_type": "phev",
+    },
 }
+
+POWERTRAIN = "bev"  # session selector — the only vehicle-related line to change
+CONFIG = POWERTRAINS[POWERTRAIN]
+
+
+class Conv1DModel(nn.Module):
+    def __init__(self, n_link_features, n_static_features, seq_len):
+        super().__init__()
+        # Conv1d: (batch, channels=n_link_features, length=seq_len)
+        self.conv = nn.Sequential(
+            nn.Conv1d(n_link_features, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv1d(128, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
+            nn.Conv1d(128, 128, kernel_size=3, padding=1),
+            nn.ReLU(),
+        )
+        # After conv: (batch, 128, seq_len) -> flatten -> 128*seq_len
+        conv_out_dim = 128 * seq_len
+        self.head = nn.Sequential(
+            nn.Linear(conv_out_dim + n_static_features, 256),
+            nn.ReLU(),
+            nn.Dropout(0.1),
+            nn.Linear(256, 128),
+            nn.ReLU(),
+            nn.Linear(128, 1),
+        )
+
+    def forward(self, x_seq, x_static):
+        # x_seq: (batch, n_link_features, seq_len)
+        # x_static: (batch, n_static_features)
+        h = self.conv(x_seq)
+        h = h.flatten(1)  # (batch, 64*seq_len)
+        h = torch.cat([h, x_static], dim=1)
+        return self.head(h).squeeze(-1)
 
 
 def train_model() -> dict:
@@ -50,20 +98,8 @@ def train_model() -> dict:
     # data
     df = pd.read_parquet(CONFIG["data_path"])
 
-    # add previous link features (within each journey, ordered by link_start_time)
+    # sort by journey and time
     df = df.sort_values(["journey_id", "link_start_time"])
-    df["prev_speed_mph"] = df.groupby("journey_id")["speed_mph"].shift(1)
-    df["speed_delta"] = df["speed_mph"] - df["prev_speed_mph"]
-    df["prev_miles"] = df.groupby("journey_id")["miles"].shift(1)
-    df["prev_grade_percent"] = df.groupby("journey_id")["grade_percent"].shift(1)
-    df["grade_delta"] = df["grade_percent"] - df["prev_grade_percent"]
-    df["prev2_speed_mph"] = df.groupby("journey_id")["speed_mph"].shift(2)
-    df["prev3_speed_mph"] = df.groupby("journey_id")["speed_mph"].shift(3)
-    df["prev4_speed_mph"] = df.groupby("journey_id")["speed_mph"].shift(4)
-    df["prev_time_seconds"] = df.groupby("journey_id")["time_seconds"].shift(1)
-    df["link_position"] = df.groupby("journey_id").cumcount()
-    prev_speed_delta = df.groupby("journey_id")["speed_delta"].shift(1)
-    df["speed_accel"] = df["speed_delta"] - prev_speed_delta
 
     # geometry: extract sinuosity and bearing in single pass
     def calc_geom_features(geom_hex):
@@ -76,8 +112,11 @@ def train_model() -> dict:
             sinuosity = 1.0
         else:
             road_len = sum(
-                math.sqrt((coords[i+1][0]-coords[i][0])**2 + (coords[i+1][1]-coords[i][1])**2)
-                for i in range(len(coords)-1)
+                math.sqrt(
+                    (coords[i + 1][0] - coords[i][0]) ** 2
+                    + (coords[i + 1][1] - coords[i][1]) ** 2
+                )
+                for i in range(len(coords) - 1)
             )
             sinuosity = road_len / straight
         bearing = math.atan2(dx, dy) * 180 / math.pi
@@ -86,54 +125,133 @@ def train_model() -> dict:
     geom_feats = df["geometry"].apply(calc_geom_features)
     df["sinuosity"] = geom_feats.apply(lambda x: x[0])
     df["bearing"] = geom_feats.apply(lambda x: x[1])
-    df["prev_sinuosity"] = df.groupby("journey_id")["sinuosity"].shift(1)
-    df["prev_bearing"] = df.groupby("journey_id")["bearing"].shift(1)
-    # Normalize bearing delta to [-180, 180]
-    raw_delta = df["bearing"] - df["prev_bearing"]
+    prev_bearing = df.groupby("journey_id")["bearing"].shift(1)
+    raw_delta = df["bearing"] - prev_bearing
     df["bearing_delta"] = (raw_delta + 180) % 360 - 180
     df["abs_bearing_delta"] = df["bearing_delta"].abs()
-    df["prev_abs_bearing_delta"] = df.groupby("journey_id")["abs_bearing_delta"].shift(1)
 
-    df = df.dropna(
-        subset=[
-            "prev_speed_mph",
-            "prev2_speed_mph",
-            "prev3_speed_mph",
-            "prev4_speed_mph",
-            "bearing_delta",
-        ]
-    )
+    # Build sequence windows: for each link, get current + 4 previous links' features
+    # Shift link features within each journey
+    for feat in LINK_FEATURES:
+        for lag in range(1, SEQ_LEN):
+            col_name = f"{feat}_lag{lag}"
+            df[col_name] = df.groupby("journey_id")[feat].shift(lag)
+
+    # Drop rows without full sequence history
+    lag_cols = [f"{feat}_lag{SEQ_LEN - 1}" for feat in LINK_FEATURES]
+    df = df.dropna(subset=lag_cols + ["bearing_delta"])
 
     train_df, test_df = train_test_split(df, test_size=0.2, random_seed=42)
 
-    # train
-    X = train_df[FEATURES]
-    y = train_df[TARGET]
+    # Build sequence arrays: (N, n_link_features, seq_len)
+    # seq_len ordering: [lag4, lag3, lag2, lag1, current] (oldest to newest)
+    def build_sequences(data):
+        n = len(data)
+        n_feat = len(LINK_FEATURES)
+        seq = np.zeros((n, n_feat, SEQ_LEN), dtype=np.float32)
+        for i, feat in enumerate(LINK_FEATURES):
+            # oldest to newest
+            for lag in range(SEQ_LEN - 1, 0, -1):
+                col = f"{feat}_lag{lag}"
+                seq[:, i, SEQ_LEN - 1 - lag] = data[col].values
+            seq[:, i, SEQ_LEN - 1] = data[feat].values
+        return seq
 
-    model_params = {
-        "n_estimators": 1000,
-        "max_depth": None,
-        "min_samples_split": 10,
-        "max_features": 0.7,
-        "max_samples": 0.5,
-        "random_state": 52,
-        "n_jobs": -1,  # use all cores
-    }
+    train_seq = build_sequences(train_df)
+    test_seq = build_sequences(test_df)
 
-    model = RandomForestRegressor(**model_params)
-    model.fit(X, y)
+    train_static = train_df[STATIC_FEATURES].values.astype(np.float32)
+    test_static = test_df[STATIC_FEATURES].values.astype(np.float32)
 
-    # evaluate
-    actual = test_df[TARGET].to_numpy()
-    predicted = model.predict(test_df[FEATURES])
-    results = evaluate(actual, predicted)
+    y_train = train_df[TARGET].to_numpy(dtype=np.float32)
+    y_test = test_df[TARGET].to_numpy(dtype=np.float32)
+
+    # Normalize: fit on train, transform both
+    # Normalize sequence features per-feature across all timesteps
+    n_feat = len(LINK_FEATURES)
+    seq_scaler = StandardScaler()
+    # Reshape to (N*seq_len, n_feat) for fitting
+    train_seq_flat = train_seq.transpose(0, 2, 1).reshape(-1, n_feat)
+    seq_scaler.fit(train_seq_flat)
+    # Transform
+    train_seq_flat = seq_scaler.transform(train_seq_flat)
+    train_seq = (
+        train_seq_flat.reshape(-1, SEQ_LEN, n_feat)
+        .transpose(0, 2, 1)
+        .astype(np.float32)
+    )
+    test_seq_flat = test_seq.transpose(0, 2, 1).reshape(-1, n_feat)
+    test_seq_flat = seq_scaler.transform(test_seq_flat)
+    test_seq = (
+        test_seq_flat.reshape(-1, SEQ_LEN, n_feat).transpose(0, 2, 1).astype(np.float32)
+    )
+
+    if STATIC_FEATURES:
+        static_scaler = StandardScaler()
+        train_static = static_scaler.fit_transform(train_static).astype(np.float32)
+        test_static = static_scaler.transform(test_static).astype(np.float32)
+
+    # PyTorch setup
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    train_dataset = TensorDataset(
+        torch.from_numpy(train_seq),
+        torch.from_numpy(train_static),
+        torch.from_numpy(y_train),
+    )
+    train_loader = DataLoader(
+        train_dataset, batch_size=2048, shuffle=True, num_workers=0
+    )
+
+    model = Conv1DModel(n_feat, len(STATIC_FEATURES), SEQ_LEN).to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=3e-3, weight_decay=1e-4)
+    steps_per_epoch = len(train_loader)
+    scheduler = torch.optim.lr_scheduler.OneCycleLR(
+        optimizer,
+        max_lr=3e-3,
+        steps_per_epoch=steps_per_epoch,
+        epochs=15,
+    )
+    loss_fn = nn.MSELoss()
+
+    # Train until time budget
+    train_end = t0 + TIME_BUDGET_SECONDS
+    epoch = 0
+    while time.time() < train_end:
+        model.train()
+        for batch_seq, batch_static, batch_y in train_loader:
+            if time.time() >= train_end:
+                break
+            batch_seq = batch_seq.to(device)
+            batch_static = batch_static.to(device)
+            batch_y = batch_y.to(device)
+
+            pred = model(batch_seq, batch_static)
+            loss = loss_fn(pred, batch_y)
+
+            optimizer.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            optimizer.step()
+            scheduler.step()
+        epoch += 1
+
+    # Evaluate
+    model.eval()
+    with torch.no_grad():
+        test_seq_t = torch.from_numpy(test_seq).to(device)
+        test_static_t = torch.from_numpy(test_static).to(device)
+        predicted = model(test_seq_t, test_static_t).cpu().numpy()
+
+    results = evaluate(y_test, predicted)
+
+    features_str = ",".join(LINK_FEATURES + STATIC_FEATURES)
     for k, v in results.items():
         print(f"{k}: {v:.6f}")
-
-    # meta
     total_seconds = time.time() - t0
     print(f"total_seconds: {total_seconds:.1f}")
-    print(f"features: {','.join(FEATURES)}")
+    print(f"features: {features_str}")
+    print(f"epochs: {epoch}")
 
     return results
 
