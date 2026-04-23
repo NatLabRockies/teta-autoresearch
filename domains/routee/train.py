@@ -80,10 +80,13 @@ def train_model() -> dict:
 
     results = evaluate(y_test, predicted)
 
-    t1 = time.time()
-    print(
-        f"{CONFIG['name']} results: {results} (trained and evaluated in {t1 - t0:.1f}s)"
-    )
+    for k, v in results.items():
+        print(f"{k}: {v:.6f}")
+
+    # meta
+    total_seconds = time.time() - t0
+    print(f"total_seconds: {total_seconds:.1f}")
+    print(f"features: {','.join(LINK_FEATURES)}")
 
     return results
 
