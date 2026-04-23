@@ -11,8 +11,8 @@ Throughout this document, `<variant>` is the partition value chosen at session s
 To set up a new experiment, work with the user to:
 
 1. **Pick the partition**: consult `domain.md → Session Partitioning` for the axis name and valid values, and pick a `<variant>`. This determines which dataset, which persistent `<variant>/best` pointer, and which `learnings.md` subsection the session works off. `train.py` has a single constant (named per `domain.md`) that selects the partition.
-1. **Agree on a run tag**: propose `<variant>-<date>` per the tag format in `domain.md → Session Partitioning`. The branch `routee-autoresearch/<tag>` must not already exist — this is a fresh run.
-1. **Create the branch**: `git checkout -b routee-autoresearch/<tag>` from current main.
+1. **Agree on a run tag**: propose `<variant>-<date>` per the tag format in `domain.md → Session Partitioning`. The branch `autoresearch/<tag>` must not already exist — this is a fresh run.
+1. **Create the branch**: `git checkout -b autoresearch/<tag>` from current main.
 1. **Read the in-scope files**: The repo is small. Read these files for full context:
    - `learnings.md` - Accumulated findings. **Read the "Cross-cutting insights" section plus the subsection for your chosen `<variant>`** (see `domain.md → Session Partitioning` for subsection naming). Use this to avoid repeating dead ends and build on what works.
    - `seed.md` - Notes and ideas for this experiment session. Do not modify.
@@ -167,7 +167,7 @@ Push tags with: `git push --tags`
 
 ## The experiment loop
 
-The experiment runs on a dedicated branch `routee-autoresearch/<tag>`.
+The experiment runs on a dedicated branch `autoresearch/<tag>`.
 
 LOOP FOREVER:
 
@@ -201,7 +201,7 @@ LOOP FOREVER:
 When you want to explore a divergent direction from a previous experiment without abandoning the current branch:
 
 1. **Identify the fork point**: Find the tag `<tag>/expN` you want to fork from (same `<variant>` — forks stay within a partition's line of inquiry; see `domain.md`)
-2. **Create a new branch**: `git checkout -b routee-autoresearch/<tag>-fork-<desc> <tag>/expN`
+2. **Create a new branch**: `git checkout -b autoresearch/<tag>-fork-<desc> <tag>/expN`
 3. **Initialize new results files**: Create fresh TSV, JSONL, and timing log under `results/<variant>/` for the fork
 4. **Create a fork plan**: Create `plans/plan-<tag>-fork-<desc>.md` noting the fork point and rationale
 5. **Continue the experiment loop** on the new branch
@@ -233,7 +233,7 @@ git checkout main
 git add learnings.md
 git commit -m "update learnings from <tag> session"
 git push
-git checkout routee-autoresearch/<tag>
+git checkout autoresearch/<tag>
 git stash pop
 ```
 

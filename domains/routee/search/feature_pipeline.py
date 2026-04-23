@@ -6,17 +6,13 @@ process start; individual trials then select feature subsets from the result.
 """
 
 import math
-import sys
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 from shapely import wkb
 
-# Make fixed_utils importable from the parent workspace
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from fixed_utils import train_test_split  # noqa: E402
+from fixed_utils import train_test_split
 
 TARGET = "energy_rate_gge"
 
@@ -118,8 +114,8 @@ def load_and_engineer(data_path: str) -> pd.DataFrame:
     raw_delta = df["bearing"] - prev_bearing
     df["bearing_delta"] = (raw_delta + 180) % 360 - 180
     df["abs_bearing_delta"] = df["bearing_delta"].abs()
-    df["prev_abs_bearing_delta"] = (
-        df.groupby("journey_id")["abs_bearing_delta"].shift(1)
+    df["prev_abs_bearing_delta"] = df.groupby("journey_id")["abs_bearing_delta"].shift(
+        1
     )
 
     # Drop rows that are missing any of the following features.

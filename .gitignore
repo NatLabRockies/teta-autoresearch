@@ -3,7 +3,6 @@
 # pixi environments
 .pixi/*
 !.pixi/config.toml
-example/powertrain/tpe/.pixi
 
 __pycache__/
 *.pyc
@@ -13,9 +12,12 @@ __pycache__/
 .DS_Store
 .vscode/
 .mypy_cache/
+.ruff_cache/
 .ipynb_checkpoints/
 
 *.egg-info/
 
-# results
-example/powertrain/**/results
+# Optuna study DBs — regeneratable, often multi-MB, not worth committing
+domains/*/results/**/*.db
+optimizers/**/results/
+results/**/*.db

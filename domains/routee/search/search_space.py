@@ -9,7 +9,7 @@ It returns a plain dict that ``models.run_trial()`` can execute.
 
 import optuna
 
-from feature_pipeline import (
+from .feature_pipeline import (
     ALL_FEATURES,
     REQUIRED_FEATURES,
     SEQ_FEATURE_POOL,
@@ -119,9 +119,7 @@ def _sample_cnn(trial: optuna.Trial) -> dict:
         "kernel_size": trial.suggest_categorical("cnn_kernel_size", [3, 5]),
         "dropout": trial.suggest_float("cnn_dropout", 0.0, 0.3),
         "lr": trial.suggest_float("cnn_lr", 5e-4, 5e-3, log=True),
-        "batch_size": trial.suggest_categorical(
-            "cnn_batch_size", [1024, 2048, 4096]
-        ),
+        "batch_size": trial.suggest_categorical("cnn_batch_size", [1024, 2048, 4096]),
         "weight_decay": trial.suggest_float("cnn_weight_decay", 1e-5, 1e-2, log=True),
         "grad_clip": trial.suggest_float("cnn_grad_clip", 0.5, 2.0),
     }
@@ -134,9 +132,7 @@ def _sample_gru(trial: optuna.Trial) -> dict:
         "n_layers": trial.suggest_int("gru_n_layers", 1, 3),
         "dropout": trial.suggest_float("gru_dropout", 0.0, 0.3),
         "lr": trial.suggest_float("gru_lr", 5e-4, 5e-3, log=True),
-        "batch_size": trial.suggest_categorical(
-            "gru_batch_size", [1024, 2048, 4096]
-        ),
+        "batch_size": trial.suggest_categorical("gru_batch_size", [1024, 2048, 4096]),
         "weight_decay": trial.suggest_float("gru_weight_decay", 1e-5, 1e-2, log=True),
         "grad_clip": trial.suggest_float("gru_grad_clip", 0.5, 2.0),
     }
@@ -212,7 +208,7 @@ def sample_config_phase1(
     trial: optuna.Trial, families: list[str] | None = None
 ) -> dict:
     """Phase 1: Sample family + HPs only; fix features to all available.
-    
+
     This allows the TPE surrogate to converge on good HP ranges without
     confusion from varying feature sets.
     """
@@ -249,7 +245,7 @@ def sample_config_phase2(
     fixed_params: dict,
 ) -> dict:
     """Phase 2: Fix family + HPs from Phase 1; sample feature subsets only.
-    
+
     This enables clean feature ablation: each trial is a direct A/B test
     of feature inclusion/exclusion.
     """
