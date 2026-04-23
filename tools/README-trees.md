@@ -103,6 +103,28 @@ cat learnings.md           # → empty (or the seed file's content)
 cat .tree-meta.json        # → provenance
 ```
 
+## Record LLM token usage for a session
+
+LLM-mode trees emit a per-model token snapshot next to the other session
+artifacts:
+
+```bash
+cd ~/repos/routee-autoresearch-trees/<name>
+pixi run python tools/token_usage.py --tag <variant>-<date>
+```
+
+Produces `results/<variant>/usage-<date>.jsonl`, one line per distinct model
+observed in Claude Code's session transcripts for the tree. Each line is a
+cumulative snapshot with `input_tokens`, `output_tokens`,
+`cache_creation_input_tokens`, `cache_read_input_tokens`, plus
+`assistant_messages`. Consumers should take the latest `snapshot_at` per
+model — lines are not deltas and must not be summed.
+
+The script reads from `~/.claude/projects/<encoded-tree-path>/*.jsonl`
+(Claude Code's own transcript store) and recomputes totals from scratch on
+every run, so invoking it multiple times in one session cannot double-count.
+Only meaningful for LLM-mode trees; optimizer trees have no agent to track.
+
 ## Sync a harness change into a live tree
 
 Rare — only when a harness bug fix or protocol change must reach an

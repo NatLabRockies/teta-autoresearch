@@ -238,3 +238,11 @@ git stash pop
 ```
 
 **At session end:** Do a final learnings update before stopping. Also update the persistent `<variant>/best` tag to this session's final best commit if it beats the prior `<variant>/best` (or create it if this is the first session for this partition), and push tags.
+
+Then record the session's LLM token usage:
+
+```
+pixi run python tools/token_usage.py --tag <tag>
+```
+
+This appends a cumulative per-model snapshot to `results/<variant>/usage-<date>.jsonl`. Each line is a cumulative total at the time of the snapshot, not a delta — do **not** sum lines. Safe to run mid-session too (e.g., at each periodic learnings update); every invocation re-reads transcripts from disk, so repeats cannot double-count.
