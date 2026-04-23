@@ -30,3 +30,10 @@ dprint = ">=0.50.0,<0.51"
 ruff = ">=0.15.10,<0.16"
 pandas-stubs = ">=3.0.0.260204,<4"
 shapely = ">=2.1.2,<3"
+# Optimizer-mode deps. The LLM-mode harness does not import these; they
+# are folded into the default env to keep optimizer trees runnable without
+# a separate environment. Move to [feature.optimizer.dependencies] if you
+# want to trim the LLM-only Docker image.
+optuna = ">=3.0,<5"
+xgboost = ">=2.0,<3"
+lightgbm = ">=4.0,<5"

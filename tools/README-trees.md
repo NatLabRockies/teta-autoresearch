@@ -1,60 +1,101 @@
 # Isolated experiment trees
 
-Tools for running comparative autoresearch experiments without cross-tree bias.
+Tools for running autoresearch experiments without cross-tree bias.
 
 ## Why
 
-The main repo accumulates knowledge across sessions (`learnings.md`, ~150 session tags, committed plans/results, persistent `<variant>/best` pointers). That's great for incremental progress but fatal for controlled comparisons: any agent starting on `main` inherits every prior session's conclusions via `learnings.md` alone.
+The main repo accumulates knowledge across sessions (`learnings.md`, tags,
+committed results, persistent `<partition>/best` pointers). That's great
+for incremental progress but fatal for controlled comparisons: any agent
+starting on `main` inherits every prior session's conclusions via
+`learnings.md` alone.
 
-These tools create per-tree isolated workspaces so that a fresh agent in tree A sees nothing from tree B's history.
+These tools create per-tree isolated workspaces so that a fresh agent or
+optimizer in tree A sees nothing from tree B's history.
 
 ## Concepts
 
-- **Template**: this repo (`routee-autoresearch`). Holds the harness — fixed evaluation (`fixed_utils.py`), data, protocol (`program.md`), domain rules (`domain.md`), and the `train.py` scaffold.
-- **Tree**: a separate git repo in `~/repos/routee-autoresearch-trees/<name>/`. Contains only the harness plus a single scaffold commit. No prior tags, no prior branches, no accumulated `learnings.md`. The agent works inside this tree.
-- **Registry**: `~/repos/routee-autoresearch-trees/registry.jsonl`. One line per tree recording name, template sha, powertrain, and which seed files were used. Use it to compare trees later.
+- **Template**: this repo. Holds the harness — fixed evaluation
+  (`fixed_utils.py`), protocol (`program.md`), optimizer drivers
+  (`optimizers/`), tree tooling (`tools/`), and one or more domain
+  scaffolds (`domains/<name>/`).
+- **Tree**: a separate git repo in `~/repos/routee-autoresearch-trees/<name>/`.
+  Contains only the scaffold plus a single initial commit. No prior tags,
+  no prior branches, no accumulated `learnings.md`.
+- **Registry**: `~/repos/routee-autoresearch-trees/registry.jsonl`. One
+  line per tree recording provenance (name, template sha, domain,
+  partition, mode, optimizer, seed files).
+
+## Flattened layout
+
+Trees are flattened. The chosen domain's files (`train.py`, `domain.md`,
+`seed.md`, `learnings.md`, `data/`) live at the tree root — not under
+`domains/<name>/`. This keeps the LLM agent's UX identical across domains
+and preserves the existing wording of `program.md`.
+
+Optimizer trees additionally preserve `domains/<name>/search/` under its
+subpath so `from domains.<name>.search import run_trial` resolves inside
+the tree.
 
 ## Create a tree
 
-```
+LLM mode (no intervention):
+
+```bash
 tools/new_experiment_tree.sh \
     --name unguided-01 \
-    --powertrain bev
+    --domain routee \
+    --mode llm \
+    --partition bev
 ```
 
-Creates `~/repos/routee-autoresearch-trees/unguided-01/` with an empty `learnings.md`, an empty `seed.md`, the harness at the current template HEAD, and a `POWERTRAIN = "bev"` in `train.py`.
+Optimizer mode (TPE over the full RouteE search space):
 
-With intervention:
-
+```bash
+tools/new_experiment_tree.sh \
+    --name tpe-bev-01 \
+    --domain routee \
+    --mode optimizer \
+    --optimizer tpe \
+    --partition bev
 ```
+
+LLM mode with intervention:
+
+```bash
 tools/new_experiment_tree.sh \
     --name guided-01 \
-    --powertrain bev \
+    --domain routee \
+    --mode llm \
+    --partition bev \
     --seed-md ./hints/guided-01-seed.md
 ```
 
-With pre-loaded learnings (e.g., to simulate mid-experiment starts or test with partial priors):
+With pre-loaded learnings (e.g. to simulate mid-experiment starts):
 
-```
+```bash
 tools/new_experiment_tree.sh \
     --name bootstrap-01 \
-    --powertrain bev \
+    --domain routee \
+    --mode llm \
+    --partition bev \
     --seed-learnings ./priors/bev-minimal.md
 ```
 
-## Run an agent in the tree
+## Run an agent / optimizer in the tree
 
+```bash
+cd ~/repos/routee-autoresearch-trees/<name>
+# LLM tree — point an agent at program.md:
+claude --dangerously-skip-permissions
+# Optimizer tree — invoke the chosen sampler:
+pixi run python -m optimizers.tpe.search --tag <tag> --partition bev --n-trials 200
 ```
-cd ~/repos/routee-autoresearch-trees/unguided-01
-# start your agent here — program.md inside the tree is the protocol it follows
-```
-
-The tree is a standalone git repo. The agent commits, tags, and branches inside it. Nothing leaks to the template repo or to sibling trees.
 
 ## Verify isolation
 
-```
-cd ~/repos/routee-autoresearch-trees/unguided-01
+```bash
+cd ~/repos/routee-autoresearch-trees/<name>
 git log --all --oneline    # → exactly one commit (initial scaffold)
 git tag -l                 # → empty
 git branch -a              # → only main
@@ -64,39 +105,72 @@ cat .tree-meta.json        # → provenance
 
 ## Sync a harness change into a live tree
 
-Rare — only when a harness bug fix or protocol change must reach an in-progress tree. Breaks strict reproducibility from the original scaffold, so use deliberately.
+Rare — only when a harness bug fix or protocol change must reach an
+in-progress tree. Breaks strict reproducibility from the original
+scaffold, so use deliberately.
 
-```
-tools/sync_harness.sh --tree ~/repos/routee-autoresearch-trees/unguided-01
+```bash
+tools/sync_harness.sh --tree ~/repos/routee-autoresearch-trees/<name>
 ```
 
-Copies harness files (`program.md`, `fixed_utils.py`, `pixi.*`, etc.) from the template's HEAD into the tree and commits as `harness: sync from template@<sha>`. Does not touch `train.py`, `learnings.md`, `seed.md`, `results/`, or `plans/`.
+Copies framework files (`program.md`, `fixed_utils.py`, `pixi.*`,
+`pyproject.toml`, etc.) and the tree's domain scaffold (`domain.md`,
+`domain.json`) from the template's HEAD into the tree. Optimizer trees
+also receive updates to `optimizers/` and `domains/<d>/search/`. Commits
+as `harness: sync from template@<sha>`.
+
+Does not touch `train.py`, `learnings.md`, `seed.md`, `results/`,
+`plans/`, or `data/`.
 
 ## What each tree contains
 
-Copied from template (scaffold, identical across trees):
+Copied from template (scaffold, identical across trees of the same mode):
 
-- `program.md`, `domain.md`, `fixed_utils.py`, `train.py` (scaffold)
+- `program.md`, `fixed_utils.py`, `pyproject.toml`
 - `pixi.toml`, `pixi.lock`, `Dockerfile`, `dprint.json`
-- `templates/`, `example/`
-- `.gitignore`, `.gitattributes`, `README.md`
+- `tools/`, `templates/`
+- `optimizers/` (optimizer-mode trees only)
+- `.gitignore`, `.gitattributes`, `README.md`, `EXTENDING.md`
 
-Replaced per tree:
+Flattened from the chosen domain (tree root):
 
-- `learnings.md` — empty by default, caller-overridable via `--seed-learnings`
+- `domain.md`, `domain.json`, `train.py`
+
+Replaced or reset per tree:
+
 - `seed.md` — empty by default, caller-overridable via `--seed-md`
-- `train.py` — `POWERTRAIN` constant set per `--powertrain`
-- `results/{bev,ice,phev}/.gitkeep` — fresh skeleton
-- `.tree-meta.json` — tree provenance (template sha, powertrain, seed sources, creation time)
+- `learnings.md` — empty by default, caller-overridable via `--seed-learnings`
+- `train.py` — partition selector stamped per `--partition`
+- `results/<p>/.gitkeep` — fresh skeleton (one subdir per partition value)
+- `.tree-meta.json` — provenance
 
-Not copied — symlinked:
+Symlinked (not copied, read-only):
 
-- `data/` → template's `data/` (read-only per protocol; saves disk)
+- `data/` → `domains/<name>/data/` in the template
+
+Preserved at original subpath (optimizer trees only):
+
+- `domains/<name>/search/` — domain hooks imported by the optimizer driver
 
 ## Design notes
 
-- **Why separate repos, not orphan branches?** `git log --all`, `git tag -l`, `git for-each-ref`, and reflog all happily cross orphan branches in a shared repo. Hiding refs is porous. Separate `.git` directories are the only airtight boundary git provides for free.
+- **Why separate repos, not orphan branches?** `git log --all`,
+  `git tag -l`, `git for-each-ref`, and reflog all happily cross orphan
+  branches in a shared repo. Hiding refs is porous. Separate `.git`
+  directories are the only airtight boundary git provides for free.
 
-- **Why symlink `data/`?** The parquets are large and read-only per protocol (`fixed_utils.py` loads them, nothing writes them). Symlinking saves disk and avoids silent divergence. If you ever need fully archivable trees, replace the symlink with a copy.
+- **Why symlink `data/`?** The parquets are large and read-only per
+  protocol. Symlinking saves disk and avoids silent divergence. If you
+  need fully archivable trees, replace the symlink with a copy.
 
-- **Why not sync harness updates automatically?** Reproducibility. Each tree should be rebuildable from a single scaffold commit. Automatic sync would mean trees silently drift based on when you last touched them. The explicit `sync_harness.sh` exists for the rare case where a harness fix must propagate.
+- **Why not auto-sync harness updates?** Reproducibility. Each tree
+  should be rebuildable from a single scaffold commit. Automatic sync
+  would mean trees silently drift based on when you last touched them.
+  The explicit `sync_harness.sh` exists for the rare case where a
+  harness fix must propagate.
+
+- **Why flatten domain files?** Single-domain-per-tree is a hard
+  invariant; no path inside the tree ever references a sibling domain.
+  Flattening keeps the LLM agent's mental model identical across
+  domains and means `program.md` can reference `train.py` / `domain.md`
+  at the root without knowing about the multi-domain template structure.

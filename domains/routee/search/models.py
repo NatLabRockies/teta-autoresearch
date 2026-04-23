@@ -7,18 +7,15 @@ For neural families, pass ``trial`` to enable Optuna pruning based on
 intermediate validation RMSE values.
 """
 
-import sys
 import time
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 from sklearn.preprocessing import StandardScaler  # type: ignore[import-untyped]
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
-from fixed_utils import evaluate  # noqa: E402
+from fixed_utils import evaluate
 
-from feature_pipeline import (
+from .feature_pipeline import (
     TARGET,
     build_sequences,
     sequential_split,
@@ -39,7 +36,7 @@ def train_tabular(
     trial: Any = None,
 ) -> float:
     """Train a sklearn / XGBoost / LightGBM model and return RMSE.
-    
+
     Parameters
     ----------
     trial : optuna.Trial, optional
@@ -61,6 +58,7 @@ def train_tabular(
 
     if family in ("rf", "extra_trees"):
         from sklearn.ensemble import ExtraTreesRegressor, RandomForestRegressor  # type: ignore[import-untyped]
+
         target_n = model_params["n_estimators"]
         base_params = {**model_params, "n_estimators": 0, "warm_start": True}
         cls = RandomForestRegressor if family == "rf" else ExtraTreesRegressor
@@ -74,22 +72,29 @@ def train_tabular(
             print(f"  [budget] stopped at {model.n_estimators}/{target_n} trees")
     elif family == "hgbr":
         from sklearn.ensemble import HistGradientBoostingRegressor  # type: ignore[import-untyped]
+
         model = HistGradientBoostingRegressor(**model_params)
         t0 = time.time()
         model.fit(X_train, y_train)
         elapsed = time.time() - t0
         if elapsed > budget_seconds:
-            print(f"  [warn] training took {elapsed:.0f}s, exceeded budget {budget_seconds:.0f}s")
+            print(
+                f"  [warn] training took {elapsed:.0f}s, exceeded budget {budget_seconds:.0f}s"
+            )
     elif family == "xgb":
         from xgboost import XGBRegressor  # type: ignore[import-untyped]
+
         model = XGBRegressor(**model_params)
         t0 = time.time()
         model.fit(X_train, y_train)
         elapsed = time.time() - t0
         if elapsed > budget_seconds:
-            print(f"  [warn] training took {elapsed:.0f}s, exceeded budget {budget_seconds:.0f}s")
+            print(
+                f"  [warn] training took {elapsed:.0f}s, exceeded budget {budget_seconds:.0f}s"
+            )
     elif family == "lgbm":
         from lightgbm import LGBMRegressor  # type: ignore[import-untyped]
+
         model = LGBMRegressor(**model_params)
         t0 = time.time()
         # Use DataFrames to preserve feature names and avoid the
@@ -99,15 +104,20 @@ def train_tabular(
         model.fit(X_train, y_train)
         elapsed = time.time() - t0
         if elapsed > budget_seconds:
-            print(f"  [warn] training took {elapsed:.0f}s, exceeded budget {budget_seconds:.0f}s")
+            print(
+                f"  [warn] training took {elapsed:.0f}s, exceeded budget {budget_seconds:.0f}s"
+            )
     elif family == "mlp":
         from sklearn.neural_network import MLPRegressor  # type: ignore[import-untyped]
+
         model = MLPRegressor(**model_params)
         t0 = time.time()
         model.fit(X_train, y_train)
         elapsed = time.time() - t0
         if elapsed > budget_seconds:
-            print(f"  [warn] training took {elapsed:.0f}s, exceeded budget {budget_seconds:.0f}s")
+            print(
+                f"  [warn] training took {elapsed:.0f}s, exceeded budget {budget_seconds:.0f}s"
+            )
     else:
         raise ValueError(f"Unknown tabular family: {family}")
 
@@ -122,6 +132,7 @@ def train_tabular(
 
 def _get_device():
     import torch
+
     if torch.cuda.is_available():
         return torch.device("cuda")
     if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
@@ -161,7 +172,9 @@ def _make_loader(X_seq, X_static, y, batch_size: int, shuffle: bool, device):
         torch.tensor(X_static, dtype=torch.float32),
         torch.tensor(y, dtype=torch.float32),
     )
-    return DataLoader(ds, batch_size=batch_size, shuffle=shuffle, pin_memory=pin, drop_last=shuffle)
+    return DataLoader(
+        ds, batch_size=batch_size, shuffle=shuffle, pin_memory=pin, drop_last=shuffle
+    )
 
 
 def _run_nn_eval(model, X_seq_te, X_static_te, y_te, device) -> float:
@@ -195,7 +208,7 @@ def train_cnn(
     trial: Any = None,
 ) -> float:
     """Train a 1-D convolutional network and return RMSE.
-    
+
     Parameters
     ----------
     trial : optuna.Trial, optional
@@ -216,26 +229,37 @@ def train_cnn(
         journey_ids = sorted(train_df["journey_id"].unique())
         n_val = max(1, int(len(journey_ids) * 0.2))
         val_ids = set(journey_ids[-n_val:])
-        train_for_training = train_df[~train_df["journey_id"].isin(val_ids)].reset_index(drop=True)
-        train_for_val = train_df[train_df["journey_id"].isin(val_ids)].reset_index(drop=True)
+        train_for_training = train_df[
+            ~train_df["journey_id"].isin(val_ids)
+        ].reset_index(drop=True)
+        train_for_val = train_df[train_df["journey_id"].isin(val_ids)].reset_index(
+            drop=True
+        )
     else:
         train_for_training = train_df
         train_for_val = None
 
-    X_seq_tr, X_static_tr, y_tr = build_sequences(train_for_training, seq_feats, static_feats, seq_len)
+    X_seq_tr, X_static_tr, y_tr = build_sequences(
+        train_for_training, seq_feats, static_feats, seq_len
+    )
     if trial is not None and train_for_val is not None:
-        X_seq_val, X_static_val, y_val = build_sequences(train_for_val, seq_feats, static_feats, seq_len)
+        X_seq_val, X_static_val, y_val = build_sequences(
+            train_for_val, seq_feats, static_feats, seq_len
+        )
     else:
-        X_seq_val = X_static_val = y_val = None
+        X_seq_val = X_static_val = y_val = None  # type: ignore[assignment]
 
-    X_seq_te, X_static_te, y_te = build_sequences(test_df, seq_feats, static_feats, seq_len)
-    
+    X_seq_te, X_static_te, y_te = build_sequences(
+        test_df, seq_feats, static_feats, seq_len
+    )
+
     if X_seq_val is not None:
         X_seq_tr, X_static_tr, X_seq_val, X_static_val = _scale_sequences(
             X_seq_tr, X_static_tr, X_seq_val, X_static_val
         )
         # Re-scale test with train statistics
         from sklearn.preprocessing import StandardScaler as SS
+
         scaler_seq = SS()
         N_tr, T, F = X_seq_tr.shape
         scaler_seq.fit(X_seq_tr.reshape(-1, F))
@@ -288,7 +312,9 @@ def train_cnn(
 
     device = _get_device()
     model = CNN().to(device)
-    loader = _make_loader(X_seq_tr, X_static_tr, y_tr, params["batch_size"], True, device)
+    loader = _make_loader(
+        X_seq_tr, X_static_tr, y_tr, params["batch_size"], True, device
+    )
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -335,6 +361,7 @@ def train_cnn(
             epoch += 1
             if trial.should_prune():
                 import optuna
+
                 raise optuna.TrialPruned()
 
     if train_steps == 0:
@@ -358,7 +385,7 @@ def train_gru(
     trial: Any = None,
 ) -> float:
     """Train a GRU sequence model and return RMSE.
-    
+
     Parameters
     ----------
     trial : optuna.Trial, optional
@@ -379,26 +406,37 @@ def train_gru(
         journey_ids = sorted(train_df["journey_id"].unique())
         n_val = max(1, int(len(journey_ids) * 0.2))
         val_ids = set(journey_ids[-n_val:])
-        train_for_training = train_df[~train_df["journey_id"].isin(val_ids)].reset_index(drop=True)
-        train_for_val = train_df[train_df["journey_id"].isin(val_ids)].reset_index(drop=True)
+        train_for_training = train_df[
+            ~train_df["journey_id"].isin(val_ids)
+        ].reset_index(drop=True)
+        train_for_val = train_df[train_df["journey_id"].isin(val_ids)].reset_index(
+            drop=True
+        )
     else:
         train_for_training = train_df
         train_for_val = None
 
-    X_seq_tr, X_static_tr, y_tr = build_sequences(train_for_training, seq_feats, static_feats, seq_len)
+    X_seq_tr, X_static_tr, y_tr = build_sequences(
+        train_for_training, seq_feats, static_feats, seq_len
+    )
     if trial is not None and train_for_val is not None:
-        X_seq_val, X_static_val, y_val = build_sequences(train_for_val, seq_feats, static_feats, seq_len)
+        X_seq_val, X_static_val, y_val = build_sequences(
+            train_for_val, seq_feats, static_feats, seq_len
+        )
     else:
-        X_seq_val = X_static_val = y_val = None
+        X_seq_val = X_static_val = y_val = None  # type: ignore[assignment]
 
-    X_seq_te, X_static_te, y_te = build_sequences(test_df, seq_feats, static_feats, seq_len)
-    
+    X_seq_te, X_static_te, y_te = build_sequences(
+        test_df, seq_feats, static_feats, seq_len
+    )
+
     if X_seq_val is not None:
         X_seq_tr, X_static_tr, X_seq_val, X_static_val = _scale_sequences(
             X_seq_tr, X_static_tr, X_seq_val, X_static_val
         )
         # Re-scale test with train statistics
         from sklearn.preprocessing import StandardScaler as SS
+
         scaler_seq = SS()
         N_tr, T, F = X_seq_tr.shape
         scaler_seq.fit(X_seq_tr.reshape(-1, F))
@@ -424,8 +462,11 @@ def train_gru(
         def __init__(self):
             super().__init__()
             self.gru = nn.GRU(
-                n_seq_feats, hidden_size, n_layers,
-                batch_first=True, dropout=gru_dropout,
+                n_seq_feats,
+                hidden_size,
+                n_layers,
+                batch_first=True,
+                dropout=gru_dropout,
             )
             head_in = hidden_size + n_static
             self.head = nn.Sequential(
@@ -444,7 +485,9 @@ def train_gru(
 
     device = _get_device()
     model = GRUModel().to(device)
-    loader = _make_loader(X_seq_tr, X_static_tr, y_tr, params["batch_size"], True, device)
+    loader = _make_loader(
+        X_seq_tr, X_static_tr, y_tr, params["batch_size"], True, device
+    )
 
     optimizer = torch.optim.AdamW(
         model.parameters(),
@@ -490,6 +533,7 @@ def train_gru(
             epoch += 1
             if trial.should_prune():
                 import optuna
+
                 raise optuna.TrialPruned()
 
     if train_steps == 0:
@@ -507,7 +551,7 @@ def train_gru(
 
 def run_trial(config: dict, df: Any, budget_seconds: float, trial: Any = None) -> float:
     """Train and evaluate one config; return RMSE.
-    
+
     Parameters
     ----------
     trial : optuna.Trial, optional
