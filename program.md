@@ -155,16 +155,6 @@ Every experiment session uses three tiers of session-scoped tags plus a persiste
 - `<tag>/baseline` — after the first baseline run, never moved
 - `<tag>/best` — force-updated (`git tag -f`) to the latest best-performing commit of this session after each improvement
 
-**Tier 3 — Milestones (judgment call):**
-
-- `<tag>/milestone-<desc>` — for breakthroughs (>10% improvement, new approach working, qualitative shift).
-
-**Tier 4 — Cross-session per-partition best (persistent):**
-
-- `<variant>/best` — force-updated (`git tag -f`) at session end (or whenever this session's `<tag>/best` beats the prior `<variant>/best`). This is the authoritative "current best model for this partition" pointer across all sessions. See `domain.md → Session Partitioning` for the concrete `<variant>` values.
-
-Push tags with: `git push --tags`
-
 ## The experiment loop
 
 The experiment runs on a dedicated branch `autoresearch/<tag>`.
@@ -197,25 +187,6 @@ Loop until the session limit is reached:
 **Crashes**: If a run crashes (OOM, or a bug, or etc.), use your judgment: If it's something dumb and easy to fix (e.g. a typo, a missing import), fix it and re-run. If the idea itself is fundamentally broken, just skip it, log "crash" as the status, and move on.
 
 **Keep going autonomously**: Do not pause to ask the human whether to continue. If you run out of ideas before the session limit, think harder — re-read `learnings.md` and `seed.md` for new angles, try combining previous near-misses, or try more radical architectural changes.
-
-## Forking
-
-When you want to explore a divergent direction from a previous experiment without abandoning the current branch:
-
-1. **Identify the fork point**: Find the tag `<tag>/expN` you want to fork from (same `<variant>` — forks stay within a partition's line of inquiry; see `domain.md`)
-2. **Create a new branch**: `git checkout -b autoresearch/<tag>-fork-<desc> <tag>/expN`
-3. **Initialize new results files**: Create fresh TSV, JSONL, and timing log under `results/<variant>/` for the fork
-4. **Create a fork plan**: Create `plans/plan-<tag>-fork-<desc>.md` noting the fork point and rationale
-5. **Continue the experiment loop** on the new branch
-
-The original branch is untouched. The fork starts from the exact code state of expN.
-
-**When to consider forking:**
-
-- 5+ consecutive discards suggest the current direction is exhausted
-- A discarded experiment showed promise in one metric but regressed another
-- You want to try a fundamentally different approach (e.g. different model family) without losing current progress
-- The human asks you to explore a specific past experiment further
 
 ## Cross-session learnings
 
