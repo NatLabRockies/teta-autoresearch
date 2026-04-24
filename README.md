@@ -112,5 +112,7 @@ docker build --build-arg GIT_TOKEN=your_token_here -t autoresearch .
 docker run -it --pids-limit 256 --memory 8g autoresearch
 ```
 
+Note if you're running on an NLR machine that has custom SSL certs, you might need to pass in: `--build-arg CA_CERT="$(cat /usr/local/share/ca-certificates/nrel-ca-bundle.crt)"` to the docker build command.
+
 Sandbox: 8 GB memory, 256 PIDs max, no host mounts, dropped Linux
 capabilities, non-root `researcher` user.
