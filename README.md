@@ -117,6 +117,11 @@ Note if you're running on an NLR machine that has custom SSL certs, you might ne
 Sandbox: 8 GB memory, 256 PIDs max, no host mounts, dropped Linux
 capabilities, non-root `researcher` user.
 
+# Acknowledgments
+ 
+This software is built on the "autoresearch" software by github user karpathy available here [link](https://github.com/karpathy/autoresearch) and distributed under the MIT license.
+
 # Metadata
 
 NLR Software Record # SWR 26-089.
+
