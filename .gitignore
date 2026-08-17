@@ -18,8 +18,9 @@ __pycache__/
 *.egg-info/
 
 # Datasets are not committed — see data/README.md
-data/raw/
-data/processed/
+# (no trailing slash: these are often symlinks, which git does not treat as dirs)
+data/raw
+data/processed
 
 # Per-run scratch produced by the experiment loop
 run.log

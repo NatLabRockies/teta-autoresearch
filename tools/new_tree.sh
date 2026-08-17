@@ -7,11 +7,16 @@
 # sample of what the method finds, not a continuation of the last run.
 #
 # Usage:
-#   tools/new_tree.sh <target-dir> [--seed-md FILE] [--no-domain]
+#   tools/new_tree.sh <target-dir> [--seed-md FILE] [--no-domain] [--data DIR]
 #
 #   --seed-md FILE   install FILE as the tree's seed.md (the human's brief)
 #   --no-domain      omit domain.md entirely — an unguarded run with no
 #                    domain context and no constraints
+#   --data DIR       dataset directory to link as the tree's data/
+#                    (default: this template's data/). Point it somewhere
+#                    outside any git repo: if data/ resolves inside one,
+#                    `git -C data log` exposes that repo's whole history
+#                    from inside the tree. tools/verify_isolation.sh checks.
 
 set -euo pipefail
 
@@ -21,9 +26,10 @@ TEMPLATE_DIR="$(cd -- "${SCRIPT_DIR}/.." &>/dev/null && pwd)"
 TARGET=""
 SEED_MD=""
 NO_DOMAIN=0
+DATA_DIR=""
 
 usage() {
-  sed -n '2,15p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
+  sed -n '2,21p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'
 }
 
 while [[ $# -gt 0 ]]; do
@@ -33,6 +39,9 @@ while [[ $# -gt 0 ]]; do
       SEED_MD="$2"; shift 2 ;;
     --no-domain)
       NO_DOMAIN=1; shift ;;
+    --data)
+      [[ $# -ge 2 ]] || { echo "--data needs a directory" >&2; exit 1; }
+      DATA_DIR="$2"; shift 2 ;;
     -h|--help)
       usage; exit 0 ;;
     -*)
@@ -63,6 +72,16 @@ if [[ -n "$SEED_MD" ]]; then
   SEED_MD="$(cd -- "$(dirname -- "$SEED_MD")" && pwd)/$(basename -- "$SEED_MD")"
 fi
 
+if [[ -n "$DATA_DIR" ]]; then
+  if [[ ! -d "$DATA_DIR" ]]; then
+    echo "no such directory: $DATA_DIR" >&2
+    exit 1
+  fi
+  DATA_DIR="$(cd -- "$DATA_DIR" && pwd)"
+else
+  DATA_DIR="$TEMPLATE_DIR/data"
+fi
+
 mkdir -p "$TARGET"
 TARGET="$(cd -- "$TARGET" && pwd)"
 
@@ -87,10 +106,16 @@ if [[ "$NO_DOMAIN" -eq 1 ]]; then
   rm -f "$TARGET/domain.md"
 fi
 
-# Point the tree at the template's dataset via a relative symlink, so a
-# checkout of any historical experiment tag resolves its data paths unchanged.
+# Link the dataset in, so a checkout of any historical experiment tag
+# resolves its data paths unchanged. Warn loudly if it lands inside a git
+# repo — that would expose the repo's history via `git -C data log`.
 rm -rf "$TARGET/data"
-ln -s "$(realpath --relative-to="$TARGET" "$TEMPLATE_DIR/data")" "$TARGET/data"
+ln -s "$DATA_DIR" "$TARGET/data"
+if data_repo="$(git -C "$(readlink -f "$TARGET/data")" rev-parse --show-toplevel 2>/dev/null)"; then
+  echo "WARNING: data/ resolves inside a git repo (${data_repo})." >&2
+  echo "         Prior experiment history is readable from inside the tree." >&2
+  echo "         Pass --data with a directory outside any repo." >&2
+fi
 
 TEMPLATE_SHA="$(git -C "$TEMPLATE_DIR" rev-parse --short HEAD)"
 git -C "$TARGET" init -q
@@ -104,5 +129,7 @@ echo "tree ready: $TARGET"
 echo "  template  : ${TEMPLATE_DIR} @ ${TEMPLATE_SHA}"
 echo "  domain.md : ${domain_state}"
 echo "  seed.md   : ${seed_state}"
+echo "  data      : ${DATA_DIR}"
 echo
+echo "  ${SCRIPT_DIR}/verify_isolation.sh $TARGET"
 echo "  cd $TARGET && claude"
