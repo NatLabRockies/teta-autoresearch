@@ -149,11 +149,11 @@ structured reasoning record that captures _why_ experiments were tried and what 
   "metrics": { "rmse": 0.0130, "trip_rmse": 0.395 },
   "best_before": { "rmse": 0.013419, "trip_rmse": 0.421 },
   "delta_pct": { "rmse": -3.1, "trip_rmse": -6.2 },
-  "description": "capture previous link speed",
-  "hypothesis": "link sequencing captures dynamics that speed/grade averages miss",
-  "observation": "both metrics improved; trip_rmse fell further because per-link errors compound across a trip",
-  "reasoning": "previous-link context encodes vehicle state that a point-wise view cannot see",
-  "tags": ["feature-engineering"]
+  "description": "widen the hidden layer 32 -> 64",
+  "hypothesis": "the model is under-capacity; the training loss is still falling when the budget ends",
+  "observation": "both metrics improved, and trip_rmse moved considerably further than rmse",
+  "reasoning": "extra capacity helped, and the lopsided movement suggests the two metrics are limited by different things — worth probing next",
+  "tags": ["architecture"]
 }
 ```
 
