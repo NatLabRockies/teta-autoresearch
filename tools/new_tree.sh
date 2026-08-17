@@ -85,9 +85,13 @@ fi
 mkdir -p "$TARGET"
 TARGET="$(cd -- "$TARGET" && pwd)"
 
-# Copy every tracked file except the tree-creation tooling itself.
+# Copy every tracked file except the tree-creation tooling and the
+# template's own README. The README documents the harness, and in doing so
+# names the reference domain and explains why its metrics are what they
+# are — context a tree built with --no-domain is specifically meant to
+# withhold. A run gets the protocol and the scaffold, not the sales pitch.
 git -C "$TEMPLATE_DIR" ls-files -z \
-  | grep -zv '^tools/new_tree\.sh$' \
+  | grep -zvE '^(tools/new_tree\.sh|README\.md)$' \
   | tar -C "$TEMPLATE_DIR" --null -T - -cf - \
   | tar -C "$TARGET" -xf -
 
