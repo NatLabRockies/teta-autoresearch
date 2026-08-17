@@ -283,6 +283,16 @@ Finally, capture the session transcript:
 pixi run python tools/capture_transcript.py --tag <tag>
 ```
 
+If an earlier session ever ran in this same directory — an aborted setup attempt, a previous
+run — scope the audit to this one, or their records get folded in:
+
+```
+pixi run python tools/capture_transcript.py --tag <tag> \
+    --since "$(git log -1 --format=%aI $(git rev-list --max-parents=0 HEAD))"
+```
+
+That expression is the scaffold commit's date, which is when this tree came into existence.
+
 This copies the raw Claude Code transcripts to `results/transcript-<tag>/` and writes
 `results/transcript-audit-<tag>.md`: tool-call counts, the full text of every operator prompt,
 and every path referenced outside the tree. The results TSV records what the experiments found;

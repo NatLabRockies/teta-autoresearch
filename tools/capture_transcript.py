@@ -134,7 +134,14 @@ def is_outside(path_str: str, tree_root: Path) -> bool:
         return True
 
 
-def audit(project_dir: Path, tree_root: Path) -> dict:
+def parse_stamp(value: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def audit(project_dir: Path, tree_root: Path, since: datetime | None = None) -> dict:
     tools: Counter[str] = Counter()
     assistant_messages = 0
     prompts: list[str] = []
@@ -142,10 +149,22 @@ def audit(project_dir: Path, tree_root: Path) -> dict:
     seen_outside: set[tuple[str, str]] = set()
     timestamps: list[str] = []
     transcripts: set[Path] = set()
+    skipped = 0
 
     for jsonl, record in iter_records(project_dir):
-        transcripts.add(jsonl)
         stamp = record.get("timestamp")
+
+        # A tree path can host more than one session — an aborted setup
+        # attempt, then the real run. Without a window they all land in one
+        # audit, inflating the tool counts and mixing the operator prompts of
+        # runs that have nothing to do with each other.
+        if since is not None:
+            parsed = parse_stamp(stamp) if isinstance(stamp, str) else None
+            if parsed is None or parsed < since:
+                skipped += 1
+                continue
+
+        transcripts.add(jsonl)
         if isinstance(stamp, str):
             timestamps.append(stamp)
 
@@ -175,6 +194,8 @@ def audit(project_dir: Path, tree_root: Path) -> dict:
         "outside": outside,
         "first": timestamps[0] if timestamps else None,
         "last": timestamps[-1] if timestamps else None,
+        "since": since,
+        "skipped": skipped,
     }
 
 
@@ -190,6 +211,12 @@ def render(tag: str, tree_root: Path, project_dir: Path, result: dict) -> str:
     add(f"- session span: {result['first']} → {result['last']}")
     add(f"- assistant messages: {result['assistant_messages']}")
     add(f"- transcript files: {len(result['transcripts'])}")
+    if result.get("since") is not None:
+        add(f"- window: records at or after `{result['since'].isoformat()}`")
+        add(
+            f"- excluded: {result['skipped']} record(s) predating the window "
+            "(earlier sessions in this same tree path)"
+        )
     add("")
 
     add("## Tool calls")
@@ -254,7 +281,27 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Write the audit but do not copy the raw transcripts.",
     )
+    parser.add_argument(
+        "--since",
+        help=(
+            "Ignore records before this ISO-8601 timestamp, e.g. "
+            "2026-08-17T23:30:00Z. Use when an earlier session ran in this "
+            "same tree path and should not be folded into this run's audit. "
+            "The scaffold commit date is a good value: "
+            "`git log -1 --format=%%aI $(git rev-list --max-parents=0 HEAD)`."
+        ),
+    )
     args = parser.parse_args(argv)
+
+    since = None
+    if args.since:
+        since = parse_stamp(args.since)
+        if since is None:
+            print(
+                f"[capture_transcript] unparseable --since: {args.since}",
+                file=sys.stderr,
+            )
+            return 1
 
     tree_root = args.tree_dir.resolve()
     project_dir = project_dir_for(tree_root)
@@ -267,10 +314,11 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    result = audit(project_dir, tree_root)
+    result = audit(project_dir, tree_root, since=since)
     if not result["transcripts"]:
         print(
-            f"[capture_transcript] {project_dir} has no transcript records. Skipping.",
+            f"[capture_transcript] {project_dir} has no transcript records"
+            f"{' in the requested window' if since else ''}. Skipping.",
             file=sys.stderr,
         )
         return 0
