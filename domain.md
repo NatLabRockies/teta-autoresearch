@@ -7,13 +7,8 @@ At each point we simulate the vehicle dynamics and get an energy estimation for 
 We take these point level results and aggregate them up to the trip/road segment level.
 Then, the road segments have attributes like total distance, average speed, average road gradiant, time to traverse, etc.
 
-We model three **powertrain types**, each with its own characteristic energy behavior:
-
-- **BEV (battery electric)** — e.g. 2017 Chevy Bolt. Link energy can be **negative** (regenerative braking). Asymmetric, heavy-tailed target distribution.
-- **ICE / Conventional (internal combustion)** — e.g. 2016 Toyota Camry. Link energy is **always non-negative** (fuel consumption only, no regen).
-- **PHEV (plug-in hybrid)** — has both a battery and a fuel tank. Link energy is reported in GGE for both fuel sources independently (both converted to gasoline-gallon-equivalent).
-
-Each experiment session targets **exactly one powertrain**. See `## Session Partitioning` below for how branches, results, tags, and `learnings.md` are namespaced, and `program.md` for the generic session protocol that uses that partitioning.
+This tree targets a **BEV (battery electric)** vehicle, the 2017 Chevy Bolt. Link energy can be
+**negative** (regenerative braking), so the target distribution is asymmetric and heavy-tailed.
 
 ### Model Inference Environment
 
@@ -39,17 +34,20 @@ Do not filter or remove data points to reduce error. The model must be able to p
 
 Do not include a feature like link position since at inference time, we will not know the position of a link relative to a whole trajectory.
 
-## Session Partitioning
+## Why these constraints exist
 
-Research on this domain is partitioned along one axis so that lines of inquiry for each partition do not collide. `program.md`'s generic `<variant>` placeholder resolves to this domain's axis value.
+Each prohibition above was added after an earlier session found and exploited the gap it now
+closes. They are not stylistic preferences — a model that violates one scores well on the
+reported metric and is worthless in deployment:
 
-- **Axis name**: `powertrain`
-- **Valid values**: `bev` (2017 Chevy Bolt), `ice` (2016 Toyota Camry), `phev` (TBD)
-- **Session tag format**: `<powertrain>-<date>` (e.g. `bev-apr17`, `ice-mar5`)
-- **Branch name**: `routee-autoresearch/<powertrain>-<date>`
-- **Results subdirectory**: `results/<powertrain>/` (so a session's files are `results/<powertrain>/results-<date>.tsv`, `experiments-<date>.jsonl`, `exp-timing-<date>.log`)
-- **Persistent cross-session best tag** (Tier 4 in `program.md`): `<powertrain>/best` — e.g. `bev/best`, `ice/best`, `phev/best`
-- **`learnings.md` structure**: top-level `Cross-cutting insights` section (pipeline/optimizer/data-representation truths that apply to every powertrain), then one section per powertrain (`BEV (2017 Chevy Bolt)`, `ICE (2016 Toyota Camry)`, `PHEV`), each with What works / What doesn't / Best known config / Open questions.
-- **`train.py` selector**: the `POWERTRAIN` constant at the top of `train.py` picks the active partition.
-- **Seed ancestor for a new partition's first session**: if `<powertrain>/best` exists, seed `train.py` from that. Otherwise, seed from `bev/best` (inherit the architectural lessons from the earliest-explored powertrain). If neither exists, use `main`.
-- **Forks stay within a partition** — do not fork a `bev-*` session from an `ice-*` tag or vice versa; cross-partition lessons flow through `learnings.md → Cross-cutting insights`, not through shared branches.
+- **Acceleration features** produced a ~35% apparent RMSE improvement in one session. None of
+  those signals exist during a route search, so the gain was unrealizable.
+- **Filtering the negative-energy tail** was the single largest "win" of two separate sessions
+  (−8.7% in one of them). Because the filter runs before the train/test split, the deleted rows
+  disappear from the test set as well as the training set — the model does not get better, the
+  exam gets easier.
+- **Link position** leaks where a link sits inside a completed trajectory, which the router does
+  not know while it is still searching.
+
+If you find yourself reaching for one of these because progress has stalled, that is the signal
+to write down "the honest search is exhausted", not to reach further.

@@ -1,3 +1,4 @@
+import json
 import time
 import pandas as pd
 import numpy as np
@@ -23,28 +24,7 @@ LINK_FEATURES = [
 TARGET = "energy_rate_gge"
 
 # --- data config ---
-# Registry of powertrain types. Each session targets exactly one.
-POWERTRAINS = {
-    "bev": {
-        "name": "2017_Chevy_Bolt",
-        "data_path": "data/processed/2017_Chevy_Bolt.parquet",
-        "energy_type": "bev",
-    },
-    "ice": {
-        "name": "2016_Toyota_Camry",
-        "data_path": "data/processed/2016_Toyota_Camry.parquet",
-        "energy_type": "ice",
-    },
-    "phev": {
-        # Filled in when PHEV raw data lands in data/processed/.
-        "name": "TBD_PHEV",
-        "data_path": "data/processed/TBD_PHEV.parquet",
-        "energy_type": "phev",
-    },
-}
-
-POWERTRAIN = "bev"  # session selector — the only vehicle-related line to change
-CONFIG = POWERTRAINS[POWERTRAIN]
+DATA_PATH = "data/processed/2017_Chevy_Bolt.parquet"
 
 
 def random_forest_model():
@@ -64,7 +44,7 @@ def train_model() -> dict:
     t0 = time.time()
 
     # data
-    df = pd.read_parquet(CONFIG["data_path"])
+    df = pd.read_parquet(DATA_PATH)
 
     # sort by journey and time
     df = df.sort_values(["journey_id", "link_start_time"])
@@ -73,15 +53,21 @@ def train_model() -> dict:
 
     y_train = train_df[TARGET].to_numpy(dtype=np.float32)
     y_test = test_df[TARGET].to_numpy(dtype=np.float32)
+    journey_id_te = test_df["journey_id"].to_numpy()
+    miles_te = test_df["miles"].to_numpy(dtype=np.float32)
 
     model = random_forest_model()
     model.fit(train_df[LINK_FEATURES], y_train)
     predicted = model.predict(test_df[LINK_FEATURES])
 
-    results = evaluate(y_test, predicted)
+    results = evaluate(y_test, predicted, journey_id=journey_id_te, miles=miles_te)
 
+    # One `name: value` line per metric for readability, then a single
+    # machine-readable line that is the parse target. Do not hardcode metric
+    # names here — whatever evaluate() returns is what gets reported.
     for k, v in results.items():
         print(f"{k}: {v:.6f}")
+    print(f"metrics: {json.dumps({k: round(v, 6) for k, v in results.items()})}")
 
     # meta
     total_seconds = time.time() - t0
@@ -97,7 +83,5 @@ if __name__ == "__main__":
         try:
             future.result(timeout=TIME_BUDGET_SECONDS)
         except TimeoutError:
-            print(
-                f"\n{CONFIG['name']}: timed out after {TIME_BUDGET_SECONDS}s, skipping"
-            )
+            print(f"\ntimed out after {TIME_BUDGET_SECONDS}s, skipping")
             executor.shutdown(wait=False, cancel_futures=True)

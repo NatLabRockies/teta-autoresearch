@@ -1,127 +1,117 @@
 # autoresearch
 
-Template for running **autonomous research experiments** that iteratively
-improve an ML model for a single optimization objective. Two execution
-modes share one harness:
+A template for running **autonomous research sessions** that iteratively improve an ML model.
+An agent (e.g. Claude Code) edits a single scaffold, `train.py`, one atomic change at a time —
+proposing a hypothesis, training, evaluating against held-out data, keeping what helps and
+reverting what doesn't — tagging every experiment and logging its reasoning as it goes.
 
-- **LLM mode** — an agent (e.g. Claude Code) edits a scaffold `train.py`
-  one change at a time, tagging each experiment, logging reasoning, and
-  pushing results. Defined by `program.md`.
-- **Optimizer mode** — an Optuna-backed driver (TPE / CMA-ES / Random)
-  iterates over a domain-defined search space. Defined by `optimizers/`.
-
-RouteE (vehicle energy prediction) is the reference domain under
-`domains/routee/`. Adding a new domain is mechanical — see `EXTENDING.md`.
+The reference problem is RouteE vehicle energy prediction: predict per-link energy consumption
+for use inside a shortest-path router. Adapting it to your own problem means editing three files
+(see [Adapting it](#adapting-it)).
 
 ## Repo layout
 
 ```
-program.md              LLM experiment protocol (domain-agnostic)
-fixed_utils.py          Shared evaluation harness (train/test split + metric)
-EXTENDING.md            How to add a domain or an optimizer
-tools/                  Tree creation + harness sync
-  new_experiment_tree.sh
-  sync_harness.sh
-  README-trees.md
-optimizers/             Pluggable Optuna-backed samplers
-  common/               Shared driver, CLI, logging, objective
-  tpe/  cmaes/  random/ Per-method entry points
-domains/                Domain implementations
-  routee/               Reference domain
-    domain.md, domain.json, train.py, learnings.md, seed.md
-    data/  results/
-    search/             Domain hooks for optimizer mode
+program.md       the experiment protocol the agent follows
+domain.md        the problem: context, inference-time constraints, guardrails
+seed.md          the human's brief for a session (empty by default)
+learnings.md     findings accumulated across sessions
+train.py         the scaffold under optimization — the only file the agent edits
+fixed_utils.py   the fixed point: train/test split and metrics, never edited
+data/            dataset (not committed — see data/README.md)
+plans/           one session plan per session, updated live as a progress log
+results/         per-experiment TSV + JSONL, token usage
+tools/           tree creation, token accounting
 ```
+
+`fixed_utils.py` is the fixed point. The split and the metric definitions live there and are
+off-limits to the agent, which is what makes results comparable across every experiment in a
+tree.
 
 ## Quickstart
 
-### Isolated experiment trees
+### 1. Create an isolated tree
 
-Every run happens in a fresh git repo (a "tree") so the agent or optimizer
-cannot see prior sessions via `git log --all`, `git tag -l`, or
-accumulated `learnings.md`. Trees are created by `tools/new_experiment_tree.sh`.
-
-Create an LLM tree for BEV:
+Every run happens in a fresh git repo (a "tree") with exactly one commit, so the agent cannot see
+prior sessions through `git log --all`, `git tag -l`, or an inherited `learnings.md`. That makes
+each tree an independent sample of what the method finds rather than a continuation of the last
+run.
 
 ```bash
-tools/new_experiment_tree.sh \
-    --name routee-bev-01 \
-    --domain routee \
-    --mode llm \
-    --partition bev
+tools/new_tree.sh ../bev-run-01
 ```
 
-Create an optimizer tree for BEV using TPE:
+Options:
 
 ```bash
-tools/new_experiment_tree.sh \
-    --name routee-bev-tpe-01 \
-    --domain routee \
-    --mode optimizer \
-    --optimizer tpe \
-    --partition bev
+# hand the session a written brief
+tools/new_tree.sh ../bev-run-02 --seed-md ~/notes/brief.md
+
+# omit domain.md entirely — no domain context, no constraints
+tools/new_tree.sh ../bev-run-03 --no-domain
 ```
 
-Trees land under `~/repos/routee-autoresearch-trees/<name>/`. The registry
-at `~/repos/routee-autoresearch-trees/registry.jsonl` logs provenance for
-each tree.
+The tree symlinks `data/` back to this template's copy, so historical experiment tags resolve
+their data paths unchanged.
 
-### Running inside a tree
-
-LLM mode — kick off an agent against `program.md`:
+### 2. Run a session
 
 ```bash
-cd ~/repos/routee-autoresearch-trees/routee-bev-01
-claude --dangerously-skip-permissions
+cd ../bev-run-01
+claude
 # then: "Have a look at program.md and let's kick off a new experiment session"
 ```
 
-Optimizer mode — run the chosen sampler:
+The agent runs until a session limit is hit (50 experiments or 8 hours), then writes its findings
+to `learnings.md` and records token usage.
+
+### 3. Read the results
+
+Every experiment is a commit and a tag, so the whole session is addressable after the fact:
 
 ```bash
-cd ~/repos/routee-autoresearch-trees/routee-bev-tpe-01
-pixi run python -m optimizers.tpe.search \
-    --tag bev-apr23 \
-    --partition bev \
-    --n-trials 200 \
-    --budget 300
+git tag -l                          # every experiment
+git show bev-may8/exp4              # the change itself
+cat results/results-bev-may8.tsv    # the metrics, one row per experiment
+cat results/experiments-bev-may8.jsonl   # hypothesis, observation, reasoning
 ```
 
-Both modes write TSV + JSONL under `results/<partition>/` using the same
-schema, so an LLM session and an optimizer session on the same partition
-can be compared directly.
+## How scoring works
 
-### Syncing a harness fix into a live tree
+`fixed_utils.evaluate()` returns a dict of named metrics, and that dict is the single source of
+truth for what "better" means. The protocol never hardcodes a metric name — the printed output,
+the TSV columns, and the JSONL fields all follow from its keys.
 
-Rare but occasionally needed. Only the framework + domain scaffold files
-are synced; tree-owned state (`train.py`, `learnings.md`, `seed.md`,
-`results/`, `plans/`) is untouched.
+Lower is better for every metric, and a change is kept only if it **Pareto-dominates** the current
+best: every metric no worse, at least one strictly better. The reference domain scores two —
+link-level RMSE and trip-level total-energy RMSE — because a model can improve per-link variance
+while getting trip totals worse, and only tracking both catches it.
+
+## Adapting it
+
+Three files, in this order:
+
+1. **`fixed_utils.py`** — define your metrics in `evaluate()`. Everything downstream follows.
+2. **`domain.md`** — describe the problem and, importantly, the constraints: what the model will
+   and won't have available in deployment, and what it must not do to the data. An agent
+   optimizing a number will find every gap you leave here.
+3. **`train.py`** — a working baseline for your problem. Keep it simple; it is a starting point
+   the agent will replace, not a finished model.
+
+`program.md` is domain-agnostic and should not need editing.
+
+## Development
 
 ```bash
-tools/sync_harness.sh --tree ~/repos/routee-autoresearch-trees/routee-bev-01
+pixi run check    # mypy, ruff, dprint, unit tests
+pixi run test     # unit tests only
+pixi run fix      # apply formatting
 ```
-
-## Docker
-
-The repo ships a sandboxed Docker image with Claude Code, pixi, and the
-full environment pre-installed. See `Dockerfile` and the build/run
-commands below.
-
-```bash
-docker build --build-arg GIT_TOKEN=your_token_here -t autoresearch .
-docker run -it --pids-limit 256 --memory 8g autoresearch
-```
-
-Note if you're running on an NLR machine that has custom SSL certs, you might need to pass in: `--build-arg CA_CERT="$(cat /usr/local/share/ca-certificates/nrel-ca-bundle.crt)"` to the docker build command.
-
-Sandbox: 8 GB memory, 256 PIDs max, no host mounts, dropped Linux
-capabilities, non-root `researcher` user.
 
 # Acknowledgments
- 
+
 This software is built on the "autoresearch" software by github user karpathy available here [link](https://github.com/karpathy/autoresearch) and distributed under the MIT license.
 
 # Metadata
 
 NLR Software Record # SWR 26-089.
-

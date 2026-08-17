@@ -1,4 +1,4 @@
-"""Tests for token_usage.py. Run: `pixi run python -m unittest tools.test_token_usage`."""
+"""Tests for token_usage.py. Run: `pixi run test`."""
 
 from __future__ import annotations
 
@@ -97,26 +97,6 @@ class AggregateByModelTests(unittest.TestCase):
         self.assertEqual(totals["claude-haiku-4-5"]["input_tokens"], 7)
 
 
-class SplitTagTests(unittest.TestCase):
-    def test_simple(self) -> None:
-        self.assertEqual(token_usage.split_tag("bev-apr23"), ("bev", "apr23"))
-
-    def test_multi_dash_variant_kept_intact(self) -> None:
-        self.assertEqual(
-            token_usage.split_tag("bev-tuned-apr23"), ("bev-tuned", "apr23")
-        )
-
-    def test_rejects_no_dash(self) -> None:
-        with self.assertRaises(ValueError):
-            token_usage.split_tag("bev")
-
-    def test_rejects_empty_side(self) -> None:
-        with self.assertRaises(ValueError):
-            token_usage.split_tag("-apr23")
-        with self.assertRaises(ValueError):
-            token_usage.split_tag("bev-")
-
-
 class AppendIdempotencyTests(unittest.TestCase):
     def test_two_runs_yield_equal_cumulative_totals(self) -> None:
         with TemporaryDirectory() as td:
@@ -128,7 +108,7 @@ class AppendIdempotencyTests(unittest.TestCase):
                     _assistant("claude-opus-4-7", input_tokens=20, output_tokens=4),
                 ],
             )
-            out = Path(td) / "results" / "bev" / "usage-apr23.jsonl"
+            out = Path(td) / "results" / "usage-bev-apr23.jsonl"
 
             now1 = datetime(2026, 4, 23, 12, 0, 0, tzinfo=timezone.utc)
             now2 = datetime(2026, 4, 23, 13, 0, 0, tzinfo=timezone.utc)

@@ -17,7 +17,9 @@ __pycache__/
 
 *.egg-info/
 
-# Optuna study DBs — regeneratable, often multi-MB, not worth committing
-domains/*/results/**/*.db
-optimizers/**/results/
-results/**/*.db
+# Datasets are not committed — see data/README.md
+data/raw/
+data/processed/
+
+# Per-run scratch produced by the experiment loop
+run.log

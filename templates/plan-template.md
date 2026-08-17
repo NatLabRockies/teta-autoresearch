@@ -2,16 +2,16 @@
 
 ## Starting point
 
-- Partition: `<variant>` (see `domain.md → Session Partitioning`)
-- Branch: `autoresearch/<tag>` (where `<tag>` is `<variant>-<date>`)
-- Forked from: `<variant>/best` at `<commit>` (or the domain's `seed_ancestor_fallback` / `main` if no prior best exists for this partition)
-- Best known metric for this partition: <from learnings.md or fresh baseline>
+- Branch: `autoresearch/<tag>`
+- Seeded from: `best` at `<commit>` (or `main` if no prior best exists)
+- Best known metrics: <from learnings.md, or "none — this is the first session">
 
-## Cross-cutting insights consulted
+## Learnings consulted
 
-List the specific items from `learnings.md → Cross-cutting insights` you're carrying into this session (what pipeline/optimizer/data-representation truths shape your baseline).
+List the specific items from `learnings.md` you're carrying into this session, and how each one
+shapes the baseline or rules out a direction.
 
-- <insight 1 and how it shapes your baseline>
+- <insight 1 and what it implies for this session>
 - <insight 2>
 
 ## Session goals
@@ -28,8 +28,9 @@ List the specific items from `learnings.md → Cross-cutting insights` you're ca
 ## Constraints / focus areas
 
 - <any session-specific constraints>
-- <focus areas from seed.md, partition-specific hypotheses from learnings.md>
+- <focus areas from seed.md, open hypotheses from learnings.md>
 
 ## Progress log
 
-Updated after each experiment. Format: `- [x] expN: description -> <metric> (status)`
+Updated after each experiment. Format:
+`- [x] expN: description -> <metric>=<value>, <metric>=<value> (status)`

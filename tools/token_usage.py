@@ -2,8 +2,8 @@
 
 Reads Claude Code's own session transcripts (stored at
 `~/.claude/projects/<encoded-cwd>/*.jsonl`) and appends a per-model
-cumulative token snapshot to `results/<variant>/usage-<date>.jsonl`
-alongside the session artifacts defined in `program.md`.
+cumulative token snapshot to `results/usage-<tag>.jsonl` alongside the
+session artifacts defined in `program.md`.
 
 Snapshot semantics: each invocation appends one line per distinct model
 seen. Every line is a *cumulative* total as of `snapshot_at`, not a delta.
@@ -14,7 +14,7 @@ are the single source of truth, and each assistant message appears exactly
 once on disk. The script recomputes totals from scratch on every run.
 
 Usage:
-    pixi run python tools/token_usage.py --tag <variant>-<date> [--tree-dir <path>]
+    pixi run python tools/token_usage.py --tag <tag> [--tree-dir <path>]
 """
 
 from __future__ import annotations
@@ -66,8 +66,8 @@ def aggregate_by_model(project_dir: Path) -> dict[str, dict[str, int]]:
     if not project_dir.is_dir():
         return totals
     for jsonl in sorted(project_dir.glob("*.jsonl")):
-        with jsonl.open("r") as f:
-            for line in f:
+        with jsonl.open("r") as handle:
+            for line in handle:
                 line = line.strip()
                 if not line:
                     continue
@@ -80,22 +80,13 @@ def aggregate_by_model(project_dir: Path) -> dict[str, dict[str, int]]:
                     continue
                 model, counters = extracted
                 bucket = totals.setdefault(
-                    model, {f: 0 for f in USAGE_FIELDS} | {"assistant_messages": 0}
+                    model,
+                    {field: 0 for field in USAGE_FIELDS} | {"assistant_messages": 0},
                 )
                 bucket["assistant_messages"] += 1
-                for f, v in counters.items():
-                    bucket[f] += v
+                for field, value in counters.items():
+                    bucket[field] += value
     return totals
-
-
-def split_tag(tag: str) -> tuple[str, str]:
-    """Split `<variant>-<date>` on the last `-`."""
-    if "-" not in tag:
-        raise ValueError(f"--tag must be <variant>-<date>, got {tag!r}")
-    variant, date = tag.rsplit("-", 1)
-    if not variant or not date:
-        raise ValueError(f"--tag must be <variant>-<date>, got {tag!r}")
-    return variant, date
 
 
 def build_records(
@@ -104,9 +95,9 @@ def build_records(
     now: datetime | None = None,
 ) -> list[dict]:
     stamp = (now or datetime.now(timezone.utc)).strftime("%Y-%m-%dT%H:%M:%SZ")
-    records = []
+    records: list[dict] = []
     for model in sorted(totals):
-        rec = {"tag": tag, "snapshot_at": stamp, "model": model}
+        rec: dict[str, object] = {"tag": tag, "snapshot_at": stamp, "model": model}
         rec.update(totals[model])
         records.append(rec)
     return records
@@ -124,7 +115,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--tag",
         required=True,
-        help="Session tag, <variant>-<date> (e.g. bev-apr23).",
+        help="Session tag (e.g. bev-apr23).",
     )
     parser.add_argument(
         "--tree-dir",
@@ -139,7 +130,6 @@ def main(argv: list[str] | None = None) -> int:
     )
     args = parser.parse_args(argv)
 
-    variant, date = split_tag(args.tag)
     project_dir = project_dir_for(args.tree_dir)
 
     if not project_dir.is_dir():
@@ -159,7 +149,7 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 0
 
-    out_path = args.tree_dir / args.results_subdir / variant / f"usage-{date}.jsonl"
+    out_path = args.tree_dir / args.results_subdir / f"usage-{args.tag}.jsonl"
     records = build_records(args.tag, totals)
     append_records(out_path, records)
 

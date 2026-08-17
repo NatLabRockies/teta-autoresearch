@@ -3,15 +3,15 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "routee-autoresearch"
+name = "teta-autoresearch"
 version = "0.1.0"
 license = "BSD-3-Clause"
-description = "Template for LLM-driven and optimizer-driven autoresearch experiments."
+description = "Template for LLM-agent-driven autoresearch experiments."
 requires-python = ">=3.13"
 
-[tool.setuptools.packages.find]
-include = ["optimizers*", "domains*"]
+[tool.setuptools]
+py-modules = ["fixed_utils"]
 
 [tool.mypy]
-files = ["fixed_utils.py", "optimizers", "domains"]
+files = ["fixed_utils.py", "train.py", "tools"]
 ignore_missing_imports = true

@@ -1,15 +1,17 @@
 # Learnings
 
-Accumulated findings across experiment sessions. Read the **Cross-cutting insights** section at the start of every new session regardless of powertrain. Then read the section for the powertrain you're working on.
+Accumulated findings across experiment sessions in this tree. Read this at the start of every
+session, before writing the session plan — it is how a session avoids re-running dead ends a
+previous session already closed.
 
-Each session targets exactly one powertrain (BEV, ICE, or PHEV). Branch and results files are namespaced by powertrain (see `program.md`). This file is the single shared memory across all powertrains — update the right subsection when logging new findings.
+Keep entries short and specific, and cite the experiment that produced each one (e.g.
+`bev-may8/exp4`). A claim with no experiment behind it is a guess, and guesses belong in
+`seed.md`, not here.
 
-## Cross-cutting insights
+## What works
 
-These are findings that are about the training pipeline, optimization, or data representation itself — not about any specific vehicle. Treat them as defaults for any new powertrain session; only re-test if you have a concrete reason to suspect the answer is powertrain-dependent.
+## What doesn't
 
-## BEV (2017 Chevy Bolt)
+## Best known configuration
 
-## ICE / Conventional (2016 Toyota Camry)
-
-## PHEV
+## Open hypotheses / next ideas
