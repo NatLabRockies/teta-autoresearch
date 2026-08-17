@@ -122,7 +122,9 @@ if data_repo="$(git -C "$(readlink -f "$TARGET/data")" rev-parse --show-toplevel
 fi
 
 TEMPLATE_SHA="$(git -C "$TEMPLATE_DIR" rev-parse --short HEAD)"
-git -C "$TARGET" init -q
+# -b main, not the git default: program.md's learnings-update step does
+# `git checkout main`, which would fail on a `master` tree ~20 experiments in.
+git -C "$TARGET" init -q -b main
 git -C "$TARGET" add -A
 git -C "$TARGET" commit -q -m "initial scaffold (from template@${TEMPLATE_SHA})"
 

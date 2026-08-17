@@ -65,7 +65,9 @@ def aggregate_by_model(project_dir: Path) -> dict[str, dict[str, int]]:
     totals: dict[str, dict[str, int]] = {}
     if not project_dir.is_dir():
         return totals
-    for jsonl in sorted(project_dir.glob("*.jsonl")):
+    # rglob, not glob: subagent transcripts live in `<session-id>/subagents/`,
+    # and their tokens are billed to the session like any other.
+    for jsonl in sorted(project_dir.rglob("*.jsonl")):
         with jsonl.open("r") as handle:
             for line in handle:
                 line = line.strip()

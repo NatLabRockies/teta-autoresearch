@@ -276,3 +276,15 @@ pixi run python tools/token_usage.py --tag <tag>
 This appends a cumulative per-model snapshot to `results/usage-<tag>.jsonl`. Each line is a
 cumulative total at the time of the snapshot, not a delta — do **not** sum lines. Safe to run
 mid-session too; every invocation re-reads transcripts from disk, so repeats cannot double-count.
+
+Finally, capture the session transcript:
+
+```
+pixi run python tools/capture_transcript.py --tag <tag>
+```
+
+This copies the raw Claude Code transcripts to `results/transcript-<tag>/` and writes
+`results/transcript-audit-<tag>.md`: tool-call counts, the full text of every operator prompt,
+and every path referenced outside the tree. The results TSV records what the experiments found;
+this records how the session actually ran. Snapshots overwrite, so running it mid-session is
+safe and the session-end run supersedes it.
