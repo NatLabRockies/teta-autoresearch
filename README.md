@@ -94,8 +94,8 @@ Two things are recorded about the session itself, both committed into the tree:
   path touched outside the tree.
 
 Transcripts are stored through **git-LFS** (`.gitattributes` declares the filter;
-`tools/new_tree.sh` runs `git lfs install --local` in every tree it creates, and
-`verify_isolation.sh` checks that it took). Three consequences worth knowing up front:
+`tools/new_tree.sh` runs `git lfs install --local` in every tree it creates. 
+Three consequences worth knowing up front:
 
 - The checked-out file is the real transcript, but `git show <rev>:results/transcript-…` prints
   the LFS pointer instead. Use `git cat-file --filters <rev>:<path>` to read a historical version,

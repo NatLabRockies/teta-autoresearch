@@ -13,7 +13,7 @@
 #                    (default: this template's data/). Point it somewhere
 #                    outside any git repo: if data/ resolves inside one,
 #                    `git -C data log` exposes that repo's whole history
-#                    from inside the tree. tools/verify_isolation.sh checks.
+#                    from inside the tree. 
 
 set -euo pipefail
 
@@ -117,5 +117,4 @@ echo "tree ready: $TARGET"
 echo "  template  : ${TEMPLATE_DIR} @ ${TEMPLATE_SHA}"
 echo "  data      : ${DATA_DIR}"
 echo
-echo "  ${SCRIPT_DIR}/verify_isolation.sh $TARGET"
 echo "  cd $TARGET && claude"
