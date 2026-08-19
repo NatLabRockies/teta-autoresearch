@@ -36,7 +36,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
 
-from token_usage import project_dir_for  # noqa: E402
+from token_usage import parse_stamp, project_dir_for, root_commit_date  # noqa: E402
 
 # Tool inputs that name a path directly.
 PATH_KEYS = ("file_path", "notebook_path", "path", "file")
@@ -132,13 +132,6 @@ def is_outside(path_str: str, tree_root: Path) -> bool:
         return False
     except ValueError:
         return True
-
-
-def parse_stamp(value: str) -> datetime | None:
-    try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
-    except ValueError:
-        return None
 
 
 def audit(project_dir: Path, tree_root: Path, since: datetime | None = None) -> dict:
@@ -285,16 +278,31 @@ def main(argv: list[str] | None = None) -> int:
         "--since",
         help=(
             "Ignore records before this ISO-8601 timestamp, e.g. "
-            "2026-08-17T23:30:00Z. Use when an earlier session ran in this "
-            "same tree path and should not be folded into this run's audit. "
-            "The scaffold commit date is a good value: "
-            "`git log -1 --format=%%aI $(git rev-list --max-parents=0 HEAD)`."
+            "2026-08-17T23:30:00Z. Defaults to the tree's scaffold commit "
+            "date, which is when this tree came into existence."
         ),
+    )
+    parser.add_argument(
+        "--all-history",
+        action="store_true",
+        help="Audit every record in the transcript directory, with no window.",
     )
     args = parser.parse_args(argv)
 
+    tree_root = args.tree_dir.resolve()
+
+    # A tree path can host more than one session — an aborted setup attempt,
+    # then the real run. Scoping to the scaffold commit by default means the
+    # common case needs no flag and cannot be got wrong by forgetting one.
     since = None
-    if args.since:
+    if args.all_history:
+        if args.since:
+            print(
+                "[capture_transcript] --since and --all-history conflict",
+                file=sys.stderr,
+            )
+            return 1
+    elif args.since:
         since = parse_stamp(args.since)
         if since is None:
             print(
@@ -302,8 +310,9 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
+    else:
+        since = root_commit_date(tree_root)
 
-    tree_root = args.tree_dir.resolve()
     project_dir = project_dir_for(tree_root)
 
     if not project_dir.is_dir():

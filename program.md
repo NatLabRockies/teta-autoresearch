@@ -5,27 +5,29 @@ single scaffold, `train.py`, keeping the changes that help and reverting the one
 
 Throughout this document `<tag>` is the session tag agreed at setup (e.g. `bev-may8`).
 
-If `domain.md` is present, it defines the problem, the inference-time constraints, and what
-counts as a legitimate change — read it first and treat it as binding. If `seed.md` is present,
-it carries the human's brief for this session. Either file may be absent; the protocol below is
-unchanged if so.
+If `domain.md` is present, it defines the problem, the inference-time constraints, what counts as
+a legitimate change, and what counts as better — read it first and treat it as binding. If
+`seed.md` is present, it carries the human's brief for this session.
 
 ## Setup
 
+All work happens on `main`. There are no experiment branches and no tags: a session is a straight
+line of commits, and the commit hash recorded with each experiment is how it stays addressable.
+
 To set up a new experiment, work with the user to:
 
-1. **Agree on a run tag**: propose something short and dated, e.g. `bev-may8`. The branch
-   `autoresearch/<tag>` must not already exist — this is a fresh run.
-1. **Create the branch**: `git checkout -b autoresearch/<tag>` from current main.
+1. **Agree on a run tag**: propose something short and dated, e.g. `bev-may8`. It names this
+   session's results files; it is not a git ref.
 1. **Read the in-scope files**: The repo is small. Read these for full context:
-   - `domain.md` — problem definition and constraints. Do not modify. (May be absent.)
-   - `seed.md` — the human's notes and ideas for this session. Do not modify. (May be absent.)
+   - `domain.md` — problem definition, constraints, etc. Do not modify.
+   - `seed.md` — the human's notes and ideas for this session. Do not modify. 
    - `learnings.md` — accumulated findings from previous sessions. Use it to avoid repeating
      dead ends and to build on what already works.
    - `fixed_utils.py` — the data split and the evaluation metrics. Do not modify.
    - `train.py` — the only file you edit.
-1. **Seed `train.py` from the best known configuration**: if the persistent `best` tag exists,
-   `git checkout best -- train.py`. Otherwise use `main`'s `train.py` as-is.
+1. **Start from `main`'s `train.py` as-is**: it already _is_ the best known configuration. Every
+   experiment that did not improve on it was reverted before the next one ran, so `HEAD` always
+   carries the best result any session in this tree has produced.
 1. **Initialize results files**, with just their headers or empty:
    - `results/results-<tag>.tsv` — header row only
    - `results/experiments-<tag>.jsonl` — empty file
@@ -33,12 +35,8 @@ To set up a new experiment, work with the user to:
    `templates/plan-template.md`. Spend time reviewing `learnings.md` and `seed.md` first, then
    fill in session goals, planned experiments, and constraints. This file is updated throughout
    the session as a progress log.
-1. **Run the baseline**: Run `train.py` as-is and record the result. Then tag:
-   ```
-   git tag <tag>/baseline
-   git tag <tag>/exp0
-   git tag -f <tag>/best
-   ```
+1. **Run the baseline**: Run `train.py` as-is, commit it as `exp0: baseline`, and record the
+   result under experiment 0 in both results files. Its commit hash is the starting best.
 1. **Confirm and go**: Confirm setup looks good.
 
 Once you get confirmation, kick off the experimentation.
@@ -46,7 +44,7 @@ Once you get confirmation, kick off the experimentation.
 ## Metrics: the contract
 
 `fixed_utils.evaluate()` returns a dict of named metrics. **That dict is the single source of
-truth for what "better" means** — this protocol never hardcodes a metric name, and neither
+truth for what the metrics are** — this protocol never hardcodes a metric name, and neither
 should you. Everything downstream follows from its keys:
 
 - `train.py` prints one `name: value` line per key, plus a single machine-readable
@@ -54,14 +52,6 @@ should you. Everything downstream follows from its keys:
 - The results TSV has one column per key, in that order.
 - The JSONL records each metric's value and its percent change.
 
-**Lower is better for every metric.** A change is **`keep`** only if it **Pareto-dominates** the
-current best: _every_ metric is no worse, and _at least one_ is strictly better. If any metric
-regresses, the change is **`discard`**, even if another improved. If all metrics tie exactly,
-discard unless the change is a simplification (see below).
-
-Do not privilege one metric over another. When metrics disagree, that disagreement is a finding
-— record which one moved and why you think they split, because it usually points at the next
-experiment.
 
 ## Experimentation
 
@@ -179,60 +169,57 @@ structured reasoning record that captures _why_ experiments were tried and what 
 Keep hypothesis/observation/reasoning concise — 1-2 sentences each. This is a decision log, not a
 paper.
 
-## Git Tags
+## Git
 
-**Per experiment (automatic):**
+Everything is commits on `main`. No branches, no tags — the experiment number and the commit hash
+are both already recorded in the TSV and the JSONL, which makes tags a second copy of the same
+index and a forest to wade through when reading results later.
 
-- `<tag>/expN` — lightweight tag on every experiment commit, created before running. These make
-  every experiment addressable after the fact.
+- One commit per experiment, message `expN: <short description>`, made _before_ the run.
+- Follow-up commits log the outcome: `log expN: <result summary>` or `revert expN: <reason>`.
+- **The current best is the `commit` of the most recent `keep` row in the results TSV.** The
+  JSONL records it as `parent_best` on every experiment. Because a non-improvement is reverted
+  before the next experiment starts, `main`'s `train.py` is always that commit's `train.py`.
 
-**Session state (automatic):**
-
-- `<tag>/baseline` — after the first baseline run, never moved
-- `<tag>/best` — force-updated (`git tag -f`) to the session's best commit after each improvement
-
-**Across sessions (at session end):**
-
-- `best` — force-updated to this session's final best commit if it beats the previous `best`.
-  This is the pointer the next session seeds `train.py` from.
+To read the session afterwards: `git log --oneline` for the sequence, `git show <hash>` for a
+change.
 
 ## The experiment loop
 
-The experiment runs on a dedicated branch `autoresearch/<tag>`.
-
 **Session limits**: A session ends when either **50 experiments** have been run or **8 hours of
 wall-clock time** have elapsed since the session started (setup time excluded), whichever comes
-first. When the limit is reached, do the final learnings update, update `best` if appropriate,
-record token usage, and stop.
+first. When the limit is reached, do the final learnings update, record token usage, capture the
+transcript, and stop.
 
 Loop until the session limit is reached:
 
-1. **Determine experiment number N** and review git state (current branch, current best commit)
+1. **Determine experiment number N** and note the current best commit (the most recent `keep` row
+   in the TSV)
 2. **Form hypothesis**: Before editing code, decide what you're testing and why. It goes into the
    JSONL, and writing it first is what makes the result interpretable.
 3. **Edit `train.py`** with one atomic experimental change
 4. **Commit**: `git commit -m "expN: <short description>"`
-5. **Tag**: `git tag <tag>/expN`
-6. **Record the start time**: `date -u +%Y-%m-%dT%H:%M:%SZ`
-7. **Run**: `pixi run python train.py > run.log 2>&1` (redirect everything — do NOT use tee or
+5. **Record the start time**: `date -u +%Y-%m-%dT%H:%M:%SZ`
+6. **Run**: `pixi run python train.py > run.log 2>&1` (redirect everything — do NOT use tee or
    let output flood your context)
-8. **Record the end time**
-9. **Parse results**: `grep "^metrics: " run.log`. If that line is missing, the run crashed —
+7. **Record the end time**. Record it accurately: `ended_at` is also what attributes this
+   experiment's share of the session's token cost (see below).
+8. **Parse results**: `grep "^metrics: " run.log`. If that line is missing, the run crashed —
    `tail -n 50 run.log` to read the stack trace.
-10. **Record results**: Append to both the TSV and the JSONL (with hypothesis, observation,
-    reasoning, and the timestamps from steps 6 and 8)
-11. **If the result Pareto-dominates** (every metric no worse, at least one strictly better):
-    - Update best tag: `git tag -f <tag>/best`
+9. **Record results**: Append to both the TSV and the JSONL (with hypothesis, observation,
+   reasoning, and the timestamps from steps 5 and 7)
+10. **If the result counts as better under `domain.md`:**
     - Commit the updated results files: `git commit -m "log expN: <result summary>"`
-12. **If any metric regressed, all tied, or the run crashed:**
-    - Restore train.py from best: `git checkout <tag>/best -- train.py`
+    - `main` now carries the new best; nothing else to update
+11. **Otherwise, or if the run crashed:**
+    - Restore train.py from the best commit: `git checkout <best-commit> -- train.py`, using the
+      hash you recorded as `parent_best` for this experiment
     - Commit the revert + updated results files: `git commit -m "revert expN: <short reason>"`
     - Note in the JSONL `observation` which metric regressed and by how much — that's the signal
       for the next hypothesis
-13. **Update plan**: Add a progress line to `plans/plan-<tag>.md`
-14. **Push**: `git push && git push --tags`
-15. **Periodic learnings update** (~every 20 experiments): checkout main, update `learnings.md`
-    with new findings, commit, push, checkout back to the experiment branch
+12. **Update plan**: Add a progress line to `plans/plan-<tag>.md`
+13. **Periodic checkpoint** (~every 20 experiments): update `learnings.md` with new findings, then
+    record usage and capture the transcript (see below), and commit
 
 **Crashes**: If a run crashes (OOM, or a bug, or etc.), use your judgment: if it's something dumb
 and easy to fix (e.g. a typo, a missing import), fix it and re-run. If the idea itself is
@@ -244,57 +231,43 @@ angles, try combining previous near-misses, or try more radical architectural ch
 
 ## Cross-session learnings
 
-`learnings.md` on the `main` branch accumulates insights across sessions: what works, what
-doesn't, the best known configuration, and open hypotheses.
+`learnings.md` accumulates insights across sessions: what works, what doesn't, the best known
+configuration, and open hypotheses.
 
 **At session start:** Read it. Use it to avoid repeating known dead ends and to build on proven
 approaches.
 
-**During the session (~every 20 experiments):** Update it with new findings:
+**During the session (~every 20 experiments):** Update it with new findings and commit. You are
+already on `main`, so this is an ordinary edit — no stashing, no switching.
 
-```
-git stash
-git checkout main
-# update learnings.md
-git add learnings.md
-git commit -m "update learnings from <tag> session"
-git push
-git checkout autoresearch/<tag>
-git stash pop
-```
+**At session end:** Do a final learnings update before stopping.
 
-**At session end:** Do a final learnings update before stopping. Update the persistent `best` tag
-to this session's final best commit if it beats the prior `best` (or create it if this is the
-first session), and push tags.
+## Token cost and transcripts
 
-Then record the session's LLM token usage:
+Run both of these at each periodic checkpoint and again at session end, then commit what they
+produce:
 
 ```
 pixi run python tools/token_usage.py --tag <tag>
-```
-
-This appends a cumulative per-model snapshot to `results/usage-<tag>.jsonl`. Each line is a
-cumulative total at the time of the snapshot, not a delta — do **not** sum lines. Safe to run
-mid-session too; every invocation re-reads transcripts from disk, so repeats cannot double-count.
-
-Finally, capture the session transcript:
-
-```
 pixi run python tools/capture_transcript.py --tag <tag>
+git add results/ && git commit -m "capture usage and transcripts through expN"
 ```
 
-If an earlier session ever ran in this same directory — an aborted setup attempt, a previous
-run — scope the audit to this one, or their records get folded in:
+`token_usage.py` writes two files. `results/usage-<tag>.jsonl` is the session view: it **appends**
+a cumulative per-model total, so do **not** sum its lines — take the latest `snapshot_at` per
+model. `results/usage-by-exp-<tag>.jsonl` is the per-experiment view: it is **overwritten** each
+run and holds one line per experiment per model, each covering only that experiment's own window,
+so those lines _are_ meant to be summed. Attribution comes from the `ended_at` stamps in
+`results/experiments-<tag>.jsonl` — an experiment is charged for everything between the previous
+experiment's end and its own, which includes the thinking that produced it.
 
-```
-pixi run python tools/capture_transcript.py --tag <tag> \
-    --since "$(git log -1 --format=%aI $(git rev-list --max-parents=0 HEAD))"
-```
+`capture_transcript.py` copies the raw Claude Code transcripts to `results/transcript-<tag>/` and
+writes `results/transcript-audit-<tag>.md`: tool-call counts, the full text of every operator
+prompt, and every path referenced outside the tree. **These are committed.** The results TSV
+records what the experiments found; this records how the session actually ran, and a session that
+cannot be inspected is a claim rather than a result.
 
-That expression is the scaffold commit's date, which is when this tree came into existence.
-
-This copies the raw Claude Code transcripts to `results/transcript-<tag>/` and writes
-`results/transcript-audit-<tag>.md`: tool-call counts, the full text of every operator prompt,
-and every path referenced outside the tree. The results TSV records what the experiments found;
-this records how the session actually ran. Snapshots overwrite, so running it mid-session is
-safe and the session-end run supersedes it.
+Both tools scope themselves to this tree automatically, ignoring anything recorded before the
+scaffold commit — so an aborted setup attempt in the same directory does not get folded in. Both
+recompute from the transcripts on disk every run, so running them mid-session is safe and a later
+run supersedes an earlier one.

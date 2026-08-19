@@ -23,11 +23,6 @@ def train_test_split(
 # Evaluation Metrics (fixed, do not modify)
 # ---------------------------------------------------------------------------
 #
-# `evaluate` is the single place metrics are named. Everything downstream
-# follows from the keys of the dict it returns: the lines train.py prints,
-# the metric columns in the results TSV, the per-metric fields in the
-# JSONL, and the Pareto keep rule in program.md. To research a different
-# problem, change this function — the protocol needs no edits.
 
 
 def rmse(actual: np.ndarray, predicted: np.ndarray) -> float:

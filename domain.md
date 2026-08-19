@@ -10,7 +10,7 @@ Then, the road segments have attributes like total distance, average speed, aver
 This tree targets a **BEV (battery electric)** vehicle, the 2017 Chevy Bolt. Link energy can be
 **negative** (regenerative braking), so the target distribution is asymmetric and heavy-tailed.
 
-### Model Inference Environment
+## Model Inference Environment
 
 Note that when we're applying these models for inference, we only have limited data (which is why we're developing these models in the first place).
 Our inference environment has the following features:
@@ -23,13 +23,23 @@ Our inference environment has the following features:
 Think about the inference environment as applying these models during a shortest path search in Google Maps where we only have limited information.
 If you're considering any kind of link sequencing, we will only have the context of the previous links that have been traversed and know nothing about the future links that might be traversed.
 
+Acceleration and driver behavior is known to have significant impact on how much energy a vehicle uses.
+Unfortunately, we can't explictly capture acceleration and driver behavior in our current inference environment since we only have link level measuresments.
+
+If you're considering any kind of link sequencing, we only want to include a single one link lookback.
+While it wouldn't vilolate any correctness for including the next link in a sequence during our shortest path searches in RouteE Compass, it would cost significant engieering time and so we just want to optimzie models that don't consider the future link.
+While it might be beneficial to include more links in the look back, our current search harness would incur a huge memory penalty for trying to enumerate new labels with that much previous context.
+To that end, we want to limit the lookback to a single link and try to squeeze out as much accuracy as we can.
+
+In addition, in RouteE Compass, we have competing objectives of performance and arruracy.
+We want to come up with a model that gives us as much accuracy as we can without being very expensive to apply inference.
+We run the energy inference at every link traversal in the shortest path search and so we need to be performant.
+
+## What counts as better
+
+`fixed_utils.evaluate()` returns a dict of trip and link RMSE metrics. A change is a keep only if it Pareto-dominates the current best on both of those metrics. 
+
 ## Constraints
-
-Do not include any features that we do not have in our model inference environment.
-For example, we do not have acceleration based data when doing model inference and so we do not want our model trained on acceleration data.
-That being said, you could consider novel features like the speed on the previous link or average_speed^2.
-
-If you're considering any kind of link sequencing, we will only have the context of the previous links that have been traversed and know nothing about the future links that might be traversed.
 
 Do not filter or remove data points to reduce error. The model must be able to predict all values in the dataset, including extreme energy rates such as heavy regenerative braking. Filtering outliers artificially lowers RMSE without improving the model's actual predictive capability — we need accurate predictions across the full distribution.
 

@@ -2,8 +2,7 @@
 
 ## Starting point
 
-- Branch: `autoresearch/<tag>`
-- Seeded from: `best` at `<commit>` (or `main` if no prior best exists)
+- Starting commit: `<hash>` — `main`'s HEAD, which carries the best known `train.py`
 - Best known metrics: <from learnings.md, or "none — this is the first session">
 
 ## Learnings consulted
