@@ -21,12 +21,16 @@ def _write_transcript(path: Path, records: list[dict]) -> None:
             f.write(json.dumps(rec) + "\n")
 
 
-def _assistant(model: str, at: str | None = None, **usage: int) -> dict:
+def _assistant(
+    model: str, at: str | None = None, sidechain: bool = False, **usage: int
+) -> dict:
     record: dict = {
         "message": {"role": "assistant", "model": model, "usage": dict(usage)}
     }
     if at is not None:
         record["timestamp"] = at
+    if sidechain:
+        record["isSidechain"] = True
     return record
 
 
@@ -311,6 +315,174 @@ class WindowTests(unittest.TestCase):
             totals = token_usage.aggregate_by_model(project, since=since)
         self.assertEqual(totals["m"]["input_tokens"], 7)
         self.assertEqual(totals["m"]["assistant_messages"], 1)
+
+
+class ContextWindowTests(unittest.TestCase):
+    """Occupancy, not cost: a peak and a final reading, never a sum."""
+
+    EXPERIMENTS = [
+        (0, token_usage.parse_stamp("2026-05-08T10:00:00Z")),
+        (1, token_usage.parse_stamp("2026-05-08T11:00:00Z")),
+    ]
+
+    def _experiments(self) -> list:
+        return [(exp, when) for exp, when in self.EXPERIMENTS if when is not None]
+
+    def test_occupancy_is_input_plus_both_cache_fields(self) -> None:
+        # Output tokens are billed to this message but only enter the window
+        # as input on the next one, so they must not be counted here.
+        with TemporaryDirectory() as td:
+            project = Path(td)
+            _write_transcript(
+                project / "s.jsonl",
+                [
+                    _assistant(
+                        "m",
+                        at="2026-05-08T09:00:00Z",
+                        input_tokens=2,
+                        cache_creation_input_tokens=6787,
+                        cache_read_input_tokens=49397,
+                        output_tokens=864,
+                    )
+                ],
+            )
+            events = token_usage.collect_events(project)
+        self.assertEqual(events[0].context_tokens, 56186)
+
+    def test_last_and_max_over_an_experiment_window(self) -> None:
+        with TemporaryDirectory() as td:
+            project = Path(td)
+            _write_transcript(
+                project / "s.jsonl",
+                [
+                    _assistant("m", at="2026-05-08T09:10:00Z", input_tokens=100),
+                    _assistant("m", at="2026-05-08T09:20:00Z", input_tokens=900),
+                    _assistant("m", at="2026-05-08T09:30:00Z", input_tokens=400),
+                ],
+            )
+            buckets = token_usage.attribute_by_experiment(
+                token_usage.collect_events(project), self._experiments()
+            )
+        self.assertEqual(buckets[0]["m"]["context_tokens_max"], 900)
+        self.assertEqual(buckets[0]["m"]["context_tokens_last"], 400)
+
+    def test_last_follows_the_clock_not_the_order_files_are_read(self) -> None:
+        # rglob sorts by path. `session-b` sorts after `session-a` but ran
+        # first, and reporting b's reading as "last" would be wrong.
+        with TemporaryDirectory() as td:
+            project = Path(td)
+            _write_transcript(
+                project / "session-a.jsonl",
+                [_assistant("m", at="2026-05-08T09:50:00Z", input_tokens=300)],
+            )
+            _write_transcript(
+                project / "session-b.jsonl",
+                [_assistant("m", at="2026-05-08T09:10:00Z", input_tokens=800)],
+            )
+            buckets = token_usage.attribute_by_experiment(
+                token_usage.collect_events(project), self._experiments()
+            )
+        self.assertEqual(buckets[0]["m"]["context_tokens_last"], 300)
+        self.assertEqual(buckets[0]["m"]["context_tokens_max"], 800)
+
+    def test_a_drop_between_experiments_is_preserved(self) -> None:
+        # Auto-compaction resets the window. exp1 ending lower than exp0 is
+        # the real reading, not something to smooth over.
+        with TemporaryDirectory() as td:
+            project = Path(td)
+            _write_transcript(
+                project / "s.jsonl",
+                [
+                    _assistant("m", at="2026-05-08T09:30:00Z", input_tokens=150_000),
+                    _assistant("m", at="2026-05-08T10:30:00Z", input_tokens=20_000),
+                ],
+            )
+            buckets = token_usage.attribute_by_experiment(
+                token_usage.collect_events(project), self._experiments()
+            )
+        self.assertEqual(buckets[0]["m"]["context_tokens_last"], 150_000)
+        self.assertEqual(buckets[1]["m"]["context_tokens_last"], 20_000)
+
+    def test_subagents_are_billed_but_excluded_from_occupancy(self) -> None:
+        # A subagent runs in its own window, so folding its turns into the
+        # main session's peak would report a peak that never happened. Its
+        # tokens are still billed to the session.
+        with TemporaryDirectory() as td:
+            project = Path(td)
+            _write_transcript(
+                project / "s.jsonl",
+                [_assistant("m", at="2026-05-08T09:10:00Z", input_tokens=500)],
+            )
+            _write_transcript(
+                project / "s" / "subagents" / "sub.jsonl",
+                [_assistant("m", at="2026-05-08T09:20:00Z", input_tokens=999_999)],
+            )
+            events = token_usage.collect_events(project)
+            totals = token_usage.totals_by_model(events)
+            buckets = token_usage.attribute_by_experiment(events, self._experiments())
+        self.assertEqual(totals["m"]["input_tokens"], 1_000_499)
+        self.assertEqual(totals["m"]["assistant_messages"], 2)
+        self.assertEqual(totals["m"]["context_tokens_max"], 500)
+        self.assertEqual(buckets[0]["m"]["context_tokens_max"], 500)
+        self.assertEqual(buckets[0]["m"]["context_tokens_last"], 500)
+
+    def test_the_isSidechain_flag_alone_is_enough(self) -> None:
+        # Same exclusion when the transcript is not under a subagents/ dir.
+        with TemporaryDirectory() as td:
+            project = Path(td)
+            _write_transcript(
+                project / "s.jsonl",
+                [
+                    _assistant("m", at="2026-05-08T09:10:00Z", input_tokens=500),
+                    _assistant(
+                        "m",
+                        at="2026-05-08T09:20:00Z",
+                        sidechain=True,
+                        input_tokens=999_999,
+                    ),
+                ],
+            )
+            totals = token_usage.totals_by_model(token_usage.collect_events(project))
+        self.assertEqual(totals["m"]["input_tokens"], 1_000_499)
+        self.assertEqual(totals["m"]["context_tokens_max"], 500)
+
+    def test_a_window_of_only_subagent_turns_reports_no_occupancy(self) -> None:
+        # Not "the context was empty" — not measured. Reporting 0 would be a
+        # claim about the main window that these events cannot support.
+        with TemporaryDirectory() as td:
+            project = Path(td)
+            _write_transcript(
+                project / "s" / "subagents" / "sub.jsonl",
+                [_assistant("m", at="2026-05-08T09:10:00Z", input_tokens=42)],
+            )
+            buckets = token_usage.attribute_by_experiment(
+                token_usage.collect_events(project), self._experiments()
+            )
+        bucket = buckets[0]["m"]
+        self.assertEqual(bucket["input_tokens"], 42)
+        self.assertNotIn("context_tokens_max", bucket)
+        self.assertNotIn("context_tokens_last", bucket)
+
+    def test_occupancy_reaches_the_written_records(self) -> None:
+        with TemporaryDirectory() as td:
+            project = Path(td)
+            _write_transcript(
+                project / "s.jsonl",
+                [_assistant("m", at="2026-05-08T09:10:00Z", input_tokens=1234)],
+            )
+            events = token_usage.collect_events(project)
+            session = token_usage.build_records(
+                "t",
+                token_usage.totals_by_model(events),
+                now=datetime(2026, 5, 8, 13, 0, 0, tzinfo=timezone.utc),
+            )
+            per_exp = token_usage.build_exp_records(
+                "t", token_usage.attribute_by_experiment(events, self._experiments())
+            )
+        self.assertEqual(session[0]["context_tokens_last"], 1234)
+        self.assertEqual(session[0]["context_tokens_max"], 1234)
+        self.assertEqual(per_exp[0]["context_tokens_last"], 1234)
+        self.assertEqual(per_exp[0]["context_tokens_max"], 1234)
 
 
 if __name__ == "__main__":

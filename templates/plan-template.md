@@ -27,7 +27,8 @@ shapes the baseline or rules out a direction.
 ## Constraints / focus areas
 
 - <any session-specific constraints>
-- <focus areas from seed.md, open hypotheses from learnings.md>
+- <focus areas from the operator's kickoff brief — record it here, this is the only durable copy>
+- <open hypotheses from learnings.md>
 
 ## Progress log
 

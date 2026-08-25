@@ -5,25 +5,19 @@ single scaffold, `train.py`, keeping the changes that help and reverting the one
 
 Throughout this document `<tag>` is the session tag agreed at setup (e.g. `bev-may8`).
 
-If `domain.md` is present, it defines the problem, the inference-time constraints, what counts as
-a legitimate change, and what counts as better — read it first and treat it as binding. If
-`seed.md` is present, it carries the human's brief for this session.
+The `domain.md` defines the problem and the domain context — read it first and treat it as binding.
 
 ## Setup
 
-All work happens on `main`. There are no experiment branches and no tags: a session is a straight
-line of commits, and the commit hash recorded with each experiment is how it stays addressable.
-
 To set up a new experiment, work with the user to:
 
-1. **Agree on a run tag**: propose something short and dated, e.g. `bev-may8`. It names this
-   session's results files; it is not a git ref.
+1. **Agree on a run tag**: propose something short and dated, e.g. `bev-may8`.
 1. **Read the in-scope files**: The repo is small. Read these for full context:
    - `domain.md` — problem definition, constraints, etc. Do not modify.
-   - `seed.md` — the human's notes and ideas for this session. Do not modify. 
    - `learnings.md` — accumulated findings from previous sessions. Use it to avoid repeating
      dead ends and to build on what already works.
-   - `fixed_utils.py` — the data split and the evaluation metrics. Do not modify.
+   - `harness.py` — the fixed point: the time budget, the data split, the evaluation metrics,
+     and the result printer. Do not modify.
    - `train.py` — the only file you edit.
 1. **Start from `main`'s `train.py` as-is**: it already _is_ the best known configuration. Every
    experiment that did not improve on it was reverted before the next one ran, so `HEAD` always
@@ -31,42 +25,54 @@ To set up a new experiment, work with the user to:
 1. **Initialize results files**, with just their headers or empty:
    - `results/results-<tag>.tsv` — header row only
    - `results/experiments-<tag>.jsonl` — empty file
-1. **Create a session plan**: You MUST create `plans/plan-<tag>.md` using the template at
-   `templates/plan-template.md`. Spend time reviewing `learnings.md` and `seed.md` first, then
-   fill in session goals, planned experiments, and constraints. This file is updated throughout
-   the session as a progress log.
+1. **Create a session plan**: Create a plan for the session `plans/plan-<tag>.md` using the template at
+   `templates/plan-template.md`. Spend time reviewing `learnings.md` first, then fill in session
+   goals, planned experiments, and constraints.
 1. **Run the baseline**: Run `train.py` as-is, commit it as `exp0: baseline`, and record the
-   result under experiment 0 in both results files. Its commit hash is the starting best.
+   result under experiment 0 in both results files.
 1. **Confirm and go**: Confirm setup looks good.
 
 Once you get confirmation, kick off the experimentation.
 
 ## Metrics: the contract
 
-`fixed_utils.evaluate()` returns a dict of named metrics. **That dict is the single source of
-truth for what the metrics are** — this protocol never hardcodes a metric name, and neither
-should you. Everything downstream follows from its keys:
+`harness.evaluate()` returns a dict of named metrics. **That dict is the single source of
+truth for what the metrics are**.
 
-- `train.py` prints one `name: value` line per key, plus a single machine-readable
-  `metrics: {...}` JSON line that is the parse target.
-- The results TSV has one column per key, in that order.
-- The JSONL records each metric's value and its percent change.
+### Run metadata
 
+`evaluate()`'s keys define the metrics; `harness.report()` defines everything else worth
+recording about a run. It prints a second machine-readable line, `meta: {...}`, carrying the
+model family and the feature list. Like the metric names, these are never hardcoded in this
+protocol — `train.py` passes them to `report()`:
+
+- `model_family` — a coarse label for the kind of model: `RandomForest`, `MLP`, `CNN`, `GRU`,
+  `Linear`. Free text, held in `MODEL_FAMILY`. It exists so results can be grouped afterwards,
+  so name the same kind of model the same way every time, and update it whenever an experiment
+  changes what kind of model is being fit — a mislabeled row is worse than no label.
+- `features` — the columns the model consumes.
+
+Both land in the TSV and the JSONL.
 
 ## Experimentation
 
 The training script runs for a **fixed time budget of 10 minutes** (wall clock training time,
-excluding startup/compilation). You launch it as: `pixi run python train.py`.
+excluding startup/compilation), set by `TIME_BUDGET_SECONDS` in `harness.py` and enforced by
+killing the run that outlasts it. You launch it as: `pixi run python train.py`.
 
 **What you CAN do:**
 
-- Modify `train.py` — this is the only file you edit. Model architecture, optimizer,
-  hyperparameters, features: all fair game.
+- Modify `train.py` — this is the only file you edit. Model
+  architecture, optimizer, hyperparameters, features.
+  The only fixed obligation is to
+  keep scoring with `harness.evaluate()` and reporting with `harness.report()`.
 
 **What you CANNOT do:**
 
-- Modify `fixed_utils.py`, `domain.md`, or `seed.md`. They are read-only. `fixed_utils.py`
-  contains the fixed data split and the ground-truth metrics.
+- Modify `harness.py` or `domain.md`. They are read-only. `harness.py` is the fixed point: the
+  time budget, the data split, the ground-truth metrics, and the report format.
+- Change the time budget. It lives in `harness.py` for that reason, and `train.py` calls
+  `run_with_budget(train_model)` with no number of its own.
 - Change how the model is scored, or which rows it is scored on. Filtering, reweighting, or
   dropping data before the split changes the exam rather than the model, and any improvement it
   produces is not real.
@@ -91,35 +97,33 @@ keep a change that only fits by going over.
 Once the script finishes it prints a summary like this:
 
 ```
-rmse: 0.039590
-trip_rmse: 0.421000
 metrics: {"rmse": 0.03959, "trip_rmse": 0.421}
-total_seconds: 9.4
-features: speed_mph,grade_percent
+meta: {"model_family": "RandomForest", "features": ["speed_mph", "grade_percent"], "total_seconds": 9.4}
 ```
 
-The per-metric lines are for reading; the `metrics:` line is the one to parse, and it contains
-exactly what `evaluate()` returned. `total_seconds` and `features` are metadata, not metrics.
-
-To extract results from the log: `grep "^metrics: " run.log`
+Two lines, both parse targets, each fact appearing exactly once. `metrics:` contains exactly what
+`evaluate()` returned. `meta:` contains everything about the run that is not a metric.
 
 ## Results TSV Format
 
-Tab-separated, NOT comma-separated. Columns are the commit, then one column per metric in
-`evaluate()` order, then status and description:
+Tab-separated, NOT comma-separated. Columns are the commit and the model family, then one column
+per metric in `evaluate()` order, then status, features, and description:
 
 ```
-commit	rmse	trip_rmse	status	description
-a1b2c3d	0.039590	0.421000	keep	baseline
-b2c3d4e	0.035200	0.395000	keep	increase LR to 0.04 (both improved)
-c3d4e5f	0.034800	0.402000	discard	GeLU activation (rmse better, trip_rmse worse)
-d4e5f6g	0.000000	0.000000	crash	double model width (OOM)
+commit	model_family	rmse	trip_rmse	status	features	description
+a1b2c3d	RandomForest	0.039590	0.421000	keep	speed_mph,grade_percent	baseline
+b2c3d4e	RandomForest	0.035200	0.395000	keep	speed_mph,grade_percent	increase LR to 0.04 (both improved)
+c3d4e5f	MLP	0.034800	0.402000	discard	speed_mph,grade_percent	swap to a 2-layer MLP (rmse better, trip_rmse worse)
+d4e5f6g	MLP	0.000000	0.000000	crash	speed_mph,grade_percent	double model width (OOM)
 ```
 
 1. git commit hash (short, 7 chars)
-2. one column per metric — use 0.000000 for crashes
-3. status: `keep`, `discard`, or `crash`
-4. short text description of what this experiment tried
+2. `model_family` from the `meta:` line — `-` if the run crashed before printing it
+3. one column per metric — use 0.000000 for crashes
+4. status: `keep`, `discard`, or `crash`
+5. `features` from the `meta:` line, comma-joined with no spaces — `-` if the run crashed before
+   printing it
+6. short text description of what this experiment tried
 
 ## Experiment Reasoning (JSONL)
 
@@ -136,6 +140,8 @@ structured reasoning record that captures _why_ experiments were tried and what 
   "status": "keep",
   "started_at": "2026-05-08T19:16:32Z",
   "ended_at": "2026-05-08T19:24:59Z",
+  "model_family": "MLP",
+  "features": ["speed_mph", "grade_percent", "miles"],
   "metrics": { "rmse": 0.0130, "trip_rmse": 0.395 },
   "best_before": { "rmse": 0.013419, "trip_rmse": 0.421 },
   "delta_pct": { "rmse": -3.1, "trip_rmse": -6.2 },
@@ -154,6 +160,9 @@ structured reasoning record that captures _why_ experiments were tried and what 
 - `parent_best`: short hash of the current best commit before this experiment (string)
 - `status`: `keep`, `discard`, or `crash` (string)
 - `started_at` / `ended_at`: UTC timestamps, `date -u +%Y-%m-%dT%H:%M:%SZ`
+- `model_family`: from the `meta:` line (string; `null` if the run crashed before printing it)
+- `features`: from the `meta:` line, as a JSON array — not comma-joined, this file is already
+  JSON (`null` for the same reason)
 - `metrics`: every metric `evaluate()` returned (use `0.0` for crashes)
 - `best_before`: the same keys, at the current best before this experiment
 - `delta_pct`: per-metric percent change from best (`-5.0` means 5% improvement). `null` for
@@ -171,18 +180,13 @@ paper.
 
 ## Git
 
-Everything is commits on `main`. No branches, no tags — the experiment number and the commit hash
-are both already recorded in the TSV and the JSONL, which makes tags a second copy of the same
-index and a forest to wade through when reading results later.
+Everything is commits on `main`. 
 
 - One commit per experiment, message `expN: <short description>`, made _before_ the run.
 - Follow-up commits log the outcome: `log expN: <result summary>` or `revert expN: <reason>`.
 - **The current best is the `commit` of the most recent `keep` row in the results TSV.** The
   JSONL records it as `parent_best` on every experiment. Because a non-improvement is reverted
   before the next experiment starts, `main`'s `train.py` is always that commit's `train.py`.
-
-To read the session afterwards: `git log --oneline` for the sequence, `git show <hash>` for a
-change.
 
 ## The experiment loop
 
@@ -204,8 +208,8 @@ Loop until the session limit is reached:
    let output flood your context)
 7. **Record the end time**. Record it accurately: `ended_at` is also what attributes this
    experiment's share of the session's token cost (see below).
-8. **Parse results**: `grep "^metrics: " run.log`. If that line is missing, the run crashed —
-   `tail -n 50 run.log` to read the stack trace.
+8. **Parse results**: `grep -E "^(metrics|meta): " run.log`. If the `metrics:` line is missing,
+   the run crashed — `tail -n 50 run.log` to read the stack trace.
 9. **Record results**: Append to both the TSV and the JSONL (with hypothesis, observation,
    reasoning, and the timestamps from steps 5 and 7)
 10. **If the result counts as better under `domain.md`:**
@@ -226,8 +230,9 @@ and easy to fix (e.g. a typo, a missing import), fix it and re-run. If the idea 
 fundamentally broken, skip it, log `crash` as the status, and move on.
 
 **Keep going autonomously**: Do not pause to ask the human whether to continue. If you run out of
-ideas before the session limit, think harder — re-read `learnings.md` and `seed.md` for new
-angles, try combining previous near-misses, or try more radical architectural changes.
+ideas before the session limit, think harder — re-read `learnings.md` and `domain.md` for new
+angles, try combining previous near-misses, or try more radical architectural changes. 
+You can also consider reviewing the latest literature to discover ideas about the state of the art.
 
 ## Cross-session learnings
 
@@ -237,8 +242,7 @@ configuration, and open hypotheses.
 **At session start:** Read it. Use it to avoid repeating known dead ends and to build on proven
 approaches.
 
-**During the session (~every 20 experiments):** Update it with new findings and commit. You are
-already on `main`, so this is an ordinary edit — no stashing, no switching.
+**During the session (~every 10 experiments):** Update it with new findings and commit. 
 
 **At session end:** Do a final learnings update before stopping.
 
@@ -253,21 +257,15 @@ pixi run python tools/capture_transcript.py --tag <tag>
 git add results/ && git commit -m "capture usage and transcripts through expN"
 ```
 
-`token_usage.py` writes two files. `results/usage-<tag>.jsonl` is the session view: it **appends**
-a cumulative per-model total, so do **not** sum its lines — take the latest `snapshot_at` per
-model. `results/usage-by-exp-<tag>.jsonl` is the per-experiment view: it is **overwritten** each
+`token_usage.py` writes two files. `results/usage-<tag>.jsonl` is the session view: it appends
+a cumulative per-model total, so do not sum its lines — take the latest `snapshot_at` per
+model. `results/usage-by-exp-<tag>.jsonl` is the per-experiment view: it is overwritten each
 run and holds one line per experiment per model, each covering only that experiment's own window,
 so those lines _are_ meant to be summed. Attribution comes from the `ended_at` stamps in
 `results/experiments-<tag>.jsonl` — an experiment is charged for everything between the previous
 experiment's end and its own, which includes the thinking that produced it.
 
-`capture_transcript.py` copies the raw Claude Code transcripts to `results/transcript-<tag>/` and
+`capture_transcript.py` copies the raw agent transcripts to `results/transcript-<tag>/` and
 writes `results/transcript-audit-<tag>.md`: tool-call counts, the full text of every operator
-prompt, and every path referenced outside the tree. **These are committed.** The results TSV
-records what the experiments found; this records how the session actually ran, and a session that
-cannot be inspected is a claim rather than a result.
+prompt, and every path referenced outside the tree. 
 
-Both tools scope themselves to this tree automatically, ignoring anything recorded before the
-scaffold commit — so an aborted setup attempt in the same directory does not get folded in. Both
-recompute from the transcripts on disk every run, so running them mid-session is safe and a later
-run supersedes an earlier one.

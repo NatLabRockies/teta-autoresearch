@@ -19,6 +19,20 @@ session at the `ended_at` timestamps the agent already records in
 `results/experiments-<tag>.jsonl`, so nothing has to happen during the
 experiment loop and nothing can be forgotten mid-run.
 
+Both views also carry two *context window* figures, which are occupancy
+readings rather than costs and so are neither summed nor accumulated:
+
+`context_tokens_last` — how full the window was on the last message of the
+window, i.e. right after that experiment finished. `context_tokens_max` — the
+peak reached during it. A single message's occupancy is
+`input_tokens + cache_creation_input_tokens + cache_read_input_tokens`; the
+split between fresh, written, and re-read cache is a billing distinction, and
+all three sit in the window regardless.
+
+Note that auto-compaction resets the window mid-session. `context_tokens_last`
+dropping sharply from one experiment to the next is compaction, not an error,
+and `context_tokens_max` is what records the peak that triggered it.
+
 Usage:
     pixi run python tools/token_usage.py --tag <tag> [--tree-dir <path>]
 """
@@ -32,6 +46,7 @@ import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import NamedTuple
 
 USAGE_FIELDS: tuple[str, ...] = (
     "input_tokens",
@@ -40,10 +55,33 @@ USAGE_FIELDS: tuple[str, ...] = (
     "cache_read_input_tokens",
 )
 
-# One assistant message: when it happened, which model billed it, what it cost.
-# The timestamp is None for records that carry no parseable one; those still
-# count toward the session total but cannot be attributed to an experiment.
-Event = tuple[datetime | None, str, dict[str, int]]
+# The three counters that occupy the context window on a given message. Output
+# tokens are excluded: they are billed to this message but only enter the
+# window as input on the next one, where they are already counted.
+CONTEXT_FIELDS: tuple[str, ...] = (
+    "input_tokens",
+    "cache_creation_input_tokens",
+    "cache_read_input_tokens",
+)
+
+
+class Event(NamedTuple):
+    """One assistant message: when, which model billed it, what it cost.
+
+    `when` is None for records that carry no parseable timestamp; those still
+    count toward the session total but cannot be attributed to an experiment.
+
+    `is_sidechain` marks a subagent's message. Subagents are billed to the
+    session like any other message, so they count toward the token totals —
+    but each runs in its own context window, so mixing them into the main
+    session's occupancy reading would report a peak that never happened.
+    """
+
+    when: datetime | None
+    model: str
+    counters: dict[str, int]
+    context_tokens: int
+    is_sidechain: bool
 
 
 def project_dir_for(tree_dir: Path) -> Path:
@@ -101,7 +139,7 @@ def root_commit_date(tree_dir: Path) -> datetime | None:
     return parse_stamp(stamp) if stamp else None
 
 
-def _extract(record: dict) -> Event | None:
+def _extract(record: dict, in_subagent_dir: bool = False) -> Event | None:
     msg = record.get("message")
     if not isinstance(msg, dict) or msg.get("role") != "assistant":
         return None
@@ -112,7 +150,13 @@ def _extract(record: dict) -> Event | None:
     stamp = record.get("timestamp")
     when = parse_stamp(stamp) if isinstance(stamp, str) else None
     counters = {f: int(usage.get(f, 0) or 0) for f in USAGE_FIELDS}
-    return when, model, counters
+    context_tokens = sum(counters[f] for f in CONTEXT_FIELDS)
+    # Two independent signals for the same thing: the per-record flag Claude
+    # Code writes, and the directory a subagent's transcript lands in. Either
+    # one is enough — a future layout change that drops one should not
+    # silently fold subagent turns back into the main window.
+    is_sidechain = in_subagent_dir or record.get("isSidechain") is True
+    return Event(when, model, counters, context_tokens, is_sidechain)
 
 
 def collect_events(project_dir: Path, since: datetime | None = None) -> list[Event]:
@@ -121,6 +165,10 @@ def collect_events(project_dir: Path, since: datetime | None = None) -> list[Eve
     With `since` set, records outside the window are dropped — including
     records with no parseable timestamp, which cannot be shown to belong to
     the window.
+
+    File order is not time order: `rglob` sorts by path, and a session's
+    subagent transcripts sort after it regardless of when they ran. Anything
+    that needs chronology has to sort on `Event.when`.
     """
     events: list[Event] = []
     if not project_dir.is_dir():
@@ -128,6 +176,7 @@ def collect_events(project_dir: Path, since: datetime | None = None) -> list[Eve
     # rglob, not glob: subagent transcripts live in `<session-id>/subagents/`,
     # and their tokens are billed to the session like any other.
     for jsonl in sorted(project_dir.rglob("*.jsonl")):
+        in_subagent_dir = "subagents" in jsonl.relative_to(project_dir).parts
         with jsonl.open("r") as handle:
             for line in handle:
                 line = line.strip()
@@ -137,10 +186,10 @@ def collect_events(project_dir: Path, since: datetime | None = None) -> list[Eve
                     record = json.loads(line)
                 except json.JSONDecodeError:
                     continue
-                event = _extract(record)
+                event = _extract(record, in_subagent_dir=in_subagent_dir)
                 if event is None:
                     continue
-                if since is not None and (event[0] is None or event[0] < since):
+                if since is not None and (event.when is None or event.when < since):
                     continue
                 events.append(event)
     return events
@@ -150,14 +199,46 @@ def _empty_bucket() -> dict[str, int]:
     return {field: 0 for field in USAGE_FIELDS} | {"assistant_messages": 0}
 
 
+def _context_stats(events: list[Event]) -> dict[str, int]:
+    """Peak and final context occupancy over `events`, main session only.
+
+    Returns an empty dict when there is nothing to read — a window made up
+    entirely of subagent turns has no main-session occupancy, and reporting
+    zero there would read as "the context was empty" rather than "not
+    measured here".
+    """
+    main = [event for event in events if not event.is_sidechain]
+    if not main:
+        return {}
+    # Sort on the timestamp, not the order events were read off disk. Only
+    # events that carry one can be placed in time; if none do, `max` is still
+    # meaningful but `last` is not.
+    stamped = sorted(
+        (event.when, event.context_tokens) for event in main if event.when is not None
+    )
+    stats = {"context_tokens_max": max(event.context_tokens for event in main)}
+    if stamped:
+        stats["context_tokens_last"] = stamped[-1][1]
+    return stats
+
+
 def totals_by_model(events: list[Event]) -> dict[str, dict[str, int]]:
-    """Sum per-model token counts + message count over a list of events."""
+    """Sum per-model token counts + message count over a list of events.
+
+    Token counters are summed; the context figures are not — they are
+    occupancy readings, so they are taken as a peak and a final value over
+    the same events.
+    """
     totals: dict[str, dict[str, int]] = {}
-    for _, model, counters in events:
-        bucket = totals.setdefault(model, _empty_bucket())
+    by_model: dict[str, list[Event]] = {}
+    for event in events:
+        bucket = totals.setdefault(event.model, _empty_bucket())
         bucket["assistant_messages"] += 1
-        for field, value in counters.items():
+        for field, value in event.counters.items():
             bucket[field] += value
+        by_model.setdefault(event.model, []).append(event)
+    for model, model_events in by_model.items():
+        totals[model].update(_context_stats(model_events))
     return totals
 
 
@@ -218,19 +299,27 @@ def attribute_by_experiment(
     Events after the last `ended_at` (the final learnings update, the wrap-up)
     land under key `None`. Events with no timestamp are unattributable and are
     dropped here; they are still counted in the session total.
+
+    Each bucket also gets its context occupancy — the peak during the window
+    and the reading on its last message, which is how full the context was
+    when that experiment finished.
     """
     buckets: dict[int | None, dict[str, dict[str, int]]] = {}
+    grouped: dict[tuple[int | None, str], list[Event]] = {}
     boundaries = [ended for _, ended in experiments]
-    for when, model, counters in events:
-        if when is None:
+    for event in events:
+        if event.when is None:
             continue
-        index = bisect.bisect_left(boundaries, when)
+        index = bisect.bisect_left(boundaries, event.when)
         exp = experiments[index][0] if index < len(experiments) else None
         by_model = buckets.setdefault(exp, {})
-        bucket = by_model.setdefault(model, _empty_bucket())
+        bucket = by_model.setdefault(event.model, _empty_bucket())
         bucket["assistant_messages"] += 1
-        for field, value in counters.items():
+        for field, value in event.counters.items():
             bucket[field] += value
+        grouped.setdefault((exp, event.model), []).append(event)
+    for (exp, model), window in grouped.items():
+        buckets[exp][model].update(_context_stats(window))
     return buckets
 
 
@@ -370,7 +459,8 @@ def main(argv: list[str] | None = None) -> int:
     append_records(out_path, records)
 
     print(f"[token_usage] appended {len(records)} snapshot line(s) to {out_path}")
-    print("[token_usage] snapshot is cumulative — take the latest per model")
+    print("[token_usage] token counts are cumulative — take the latest per model")
+    print("[token_usage] context_tokens_* are occupancy readings, not totals")
     for rec in records:
         print(json.dumps(rec))
 
@@ -392,7 +482,8 @@ def main(argv: list[str] | None = None) -> int:
         f"[token_usage] wrote {len(exp_records)} per-experiment line(s) across "
         f"{len(experiments)} experiment(s) to {exp_path}"
     )
-    print("[token_usage] per-experiment lines are per-window totals — safe to sum")
+    print("[token_usage] per-experiment token counts are per-window — safe to sum")
+    print("[token_usage] context_tokens_* are not: a drop between rows is compaction")
     return 0
 
 

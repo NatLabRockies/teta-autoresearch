@@ -87,7 +87,6 @@ git -C "$TEMPLATE_DIR" ls-files -z \
 # A tree starts with no accumulated state: no prior findings, no prior
 # results, no prior plans. Anything inherited here would contaminate the run.
 : > "$TARGET/learnings.md"
-: > "$TARGET/seed.md"
 rm -rf "$TARGET/results" "$TARGET/plans"
 mkdir -p "$TARGET/results" "$TARGET/plans"
 touch "$TARGET/results/.gitkeep" "$TARGET/plans/.gitkeep"

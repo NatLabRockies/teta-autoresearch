@@ -14,27 +14,28 @@ for use inside a shortest-path router. Adapting it to your own problem means edi
 ```
 program.md       the experiment protocol the agent follows
 domain.md        the problem: context, constraints, etc. 
-seed.md          the human's brief for a session (empty by default)
 learnings.md     findings accumulated across sessions
 train.py         the scaffold under optimization — the only file the agent edits
-fixed_utils.py   the fixed point: train/test split and metrics, never edited
+harness.py       the fixed point: time budget, split, metrics, reporting — never edited
 data/            dataset (not committed — see data/README.md)
 plans/           one session plan per session, updated live as a progress log
 results/         per-experiment TSV + JSONL, token usage, session transcripts
 tools/           tree creation, token accounting, transcripts
 ```
 
-`fixed_utils.py` is the fixed point. The split and the metric definitions live there and are
-off-limits to the agent, which is what makes results comparable across every experiment in a
-tree.
+Two Python files, and the split between them is the whole experimental control. `harness.py` is
+the fixed point: the time budget, the train/test split, the metric definitions, and the report
+format. 
+
+`train.py` is everything else, and all of it is fair game. The agent can rewrite it entirely;
+its only obligations are to score with `harness.evaluate()` and report with `harness.report()`.
 
 ## Quickstart
 
 ### 1. Create an isolated tree
 
 Every run happens in a fresh git repo (a "tree") with exactly one commit, so the agent cannot see
-prior sessions through `git log --all` or an inherited `learnings.md`. That makes each tree an
-independent sample of what the method finds rather than a continuation of the last run.
+prior sessions through `git log --all` or an inherited `learnings.md`. 
 
 ```bash
 tools/new_tree.sh ../bev-run-01
@@ -42,7 +43,6 @@ tools/new_tree.sh ../bev-run-01
 
 The tree symlinks `data/` back to this template's copy, so a checkout of any historical
 experiment commit resolves its data paths unchanged.
-
 
 ### 2. Run a session
 
@@ -57,8 +57,8 @@ to `learnings.md`, records token usage, and commits the session transcript.
 
 ### 3. Read the results
 
-A session is a straight line of commits on `main` — no branches, no tags. The experiment number
-and the commit hash are recorded with every result, and that is the whole index:
+A session is a straight line of commits on `main`. The experiment number
+and the commit hash are recorded with every result:
 
 ```bash
 git log --oneline                          # every experiment, in order
@@ -68,17 +68,10 @@ cat results/experiments-bev-may8.jsonl     # hypothesis, observation, reasoning
 cat results/usage-by-exp-bev-may8.jsonl    # what each experiment cost, per model
 cat results/transcript-audit-bev-may8.md   # how the session actually ran
 ```
-
-The current best is the commit of the most recent `keep` row in the TSV — and since every
-non-improvement is reverted before the next experiment starts, `main`'s `train.py` is always that
-commit's `train.py`.
-
 ## How scoring works
 
-`fixed_utils.evaluate()` returns a dict of named metrics, and that dict is the single source of
-truth for what the metrics are. The protocol never hardcodes a metric name — the printed
-output, the TSV columns, and the JSONL fields all follow from its keys.
-
+`harness.evaluate()` returns a dict of named metrics, and that dict is the single source of
+truth for what the metrics are. 
 
 ## Token cost and transcripts
 
@@ -88,13 +81,19 @@ Two things are recorded about the session itself, both committed into the tree:
   the latest snapshot per model; do not sum). `results/usage-by-exp-<tag>.jsonl` — rewritten each
   run, one line per experiment per model, covering only that experiment's window, so these lines
   _do_ sum. Attribution is retrospective, from the `ended_at` stamps the agent already logs, so
-  nothing has to happen during the experiment loop.
+  nothing has to happen during the experiment loop. Both files also carry
+  `context_tokens_last` / `context_tokens_max` — how full the context window was when each
+  experiment finished, and its peak during that experiment. These are occupancy readings rather
+  than costs, so they are neither summed nor accumulated, and a sharp drop between consecutive
+  experiments is auto-compaction resetting the window. Subagents are counted in the token totals
+  but excluded from the context figures: each runs in a window of its own, so folding them in
+  would report a peak that never happened.
 - `results/transcript-<tag>/` — the raw Claude Code transcripts, verbatim, plus
   `results/transcript-audit-<tag>.md` summarizing tool calls, every operator prompt, and every
   path touched outside the tree.
 
 Transcripts are stored through **git-LFS** (`.gitattributes` declares the filter;
-`tools/new_tree.sh` runs `git lfs install --local` in every tree it creates. 
+`tools/new_tree.sh` runs `git lfs install --local` in every tree it creates.
 Three consequences worth knowing up front:
 
 - The checked-out file is the real transcript, but `git show <rev>:results/transcript-…` prints
@@ -109,11 +108,15 @@ Three consequences worth knowing up front:
 
 Three files, in this order:
 
-1. **`fixed_utils.py`** — define your metrics in `evaluate()`. Everything downstream follows.
+1. **`harness.py`** — define your metrics in `evaluate()`, and adjust the split and the time
+   budget if your problem needs different ones. Everything downstream follows from `evaluate()`'s
+   keys. 
 2. **`domain.md`** — describe the problem; the constraints (what the model will and won't have
-   available in deployment, and what it must not do to the data); 
+   available in deployment, and what it must not do to the data);
 3. **`train.py`** — a working baseline for your problem. Keep it simple; it is a starting point
-   the agent will replace, not a finished model.
+   the agent will replace, not a finished model. Set `MODEL_FAMILY`, `LINK_FEATURES`, `TARGET`
+   and `DATA_PATH`, load your data, fit something, and hand the results to `report()`. There is
+   no interface to implement — the agent is free to restructure the whole file.
 
 `program.md` is domain-agnostic and should not need editing.
 

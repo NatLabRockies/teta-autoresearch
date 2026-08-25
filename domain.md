@@ -37,7 +37,7 @@ We run the energy inference at every link traversal in the shortest path search 
 
 ## What counts as better
 
-`fixed_utils.evaluate()` returns a dict of trip and link RMSE metrics. A change is a keep only if it Pareto-dominates the current best on both of those metrics. 
+`harness.evaluate()` returns a dict of trip and link RMSE metrics. A change is a keep only if it Pareto-dominates the current best on both of those metrics.
 
 ## Constraints
 

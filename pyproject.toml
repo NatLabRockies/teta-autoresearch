@@ -10,8 +10,8 @@ description = "Template for LLM-agent-driven autoresearch experiments."
 requires-python = ">=3.13"
 
 [tool.setuptools]
-py-modules = ["fixed_utils"]
+py-modules = ["harness"]
 
 [tool.mypy]
-files = ["fixed_utils.py", "train.py", "tools"]
+files = ["harness.py", "train.py", "tools"]
 ignore_missing_imports = true
