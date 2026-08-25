@@ -13,7 +13,7 @@
 #                    (default: this template's data/). Point it somewhere
 #                    outside any git repo: if data/ resolves inside one,
 #                    `git -C data log` exposes that repo's whole history
-#                    from inside the tree. 
+#                    from inside the tree.
 
 set -euo pipefail
 
@@ -102,7 +102,8 @@ if data_repo="$(git -C "$(readlink -f "$TARGET/data")" rev-parse --show-toplevel
     echo "         Pass --data with a directory outside any repo." >&2
 fi
 
-TEMPLATE_SHA="$(git -C "$TEMPLATE_DIR" rev-parse --short HEAD)"
+TEMPLATE_SHA="$(git -C "$TEMPLATE_DIR" rev-parse HEAD)"
+printf '%s\n' "$TEMPLATE_SHA" > "$TARGET/TEMPLATE_COMMIT"
 # -b main, not the git default: the protocol runs the whole session on `main`,
 # and its instructions say so by name.
 git -C "$TARGET" init -q -b main
@@ -110,7 +111,7 @@ git -C "$TARGET" init -q -b main
 # tree never reconfigures the operator's machine.
 git -C "$TARGET" lfs install --local &>/dev/null
 git -C "$TARGET" add -A
-git -C "$TARGET" commit -q -m "initial scaffold (from template@${TEMPLATE_SHA})"
+git -C "$TARGET" commit -q -m "initial scaffold (from template@${TEMPLATE_SHA:0:12})"
 
 echo "tree ready: $TARGET"
 echo "  template  : ${TEMPLATE_DIR} @ ${TEMPLATE_SHA}"

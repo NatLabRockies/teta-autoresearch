@@ -43,6 +43,7 @@ tools/new_tree.sh ../bev-run-01
 
 The tree symlinks `data/` back to this template's copy, so a checkout of any historical
 experiment commit resolves its data paths unchanged.
+`TEMPLATE_COMMIT` records the full template commit hash used to create the tree.
 
 ### 2. Run a session
 
