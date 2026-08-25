@@ -2,7 +2,9 @@
 # Create an isolated experiment tree from this template.
 #
 # A tree is a fresh git repo with exactly one commit, so the agent cannot see
-# prior sessions through `git log --all` or an inherited learnings.md. That
+TEMPLATE_COMMIT="$(git -C "$TEMPLATE_DIR" rev-parse HEAD)"
+TEMPLATE_SHA="${TEMPLATE_COMMIT:0:7}"
+printf '%s\n' "$TEMPLATE_COMMIT" > "$TARGET/TEMPLATE_COMMIT"
 # isolation is the point: each tree is an independent sample of what the
 # method finds, not a continuation of the last run.
 #
