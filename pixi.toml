@@ -1,7 +1,6 @@
 [workspace]
-authors = ["Nicholas Reinicke <Nicholas.Reinicke@nrel.gov>"]
 channels = ["conda-forge"]
-name = "routee-autoresearch"
+name = "teta-autoresearch"
 platforms = ["osx-arm64", "linux-aarch64", "linux-64"]
 version = "0.1.0"
 
@@ -12,7 +11,8 @@ format = "ruff format --check"
 format_fix = "ruff format"
 dprint = "dprint check"
 dprint_fix = "dprint fmt"
-check = { depends-on = ["mypy", "lint", "format", "dprint"] }
+test = "python -m unittest discover -s tools -t . -p 'test_*.py'"
+check = { depends-on = ["mypy", "lint", "format", "dprint", "test"] }
 fix = { depends-on = ["format_fix", "dprint_fix"] }
 
 [dependencies]
@@ -29,13 +29,6 @@ dprint = ">=0.50.0,<0.51"
 ruff = ">=0.15.10,<0.16"
 pandas-stubs = ">=3.0.0.260204,<4"
 shapely = ">=2.1.2,<3"
-# Optimizer-mode deps. The LLM-mode harness does not import these; they
-# are folded into the default env to keep optimizer trees runnable without
-# a separate environment. Move to [feature.optimizer.dependencies] if you
-# want to trim the LLM-only Docker image.
-optuna = ">=3.0,<5"
-xgboost = ">=2.0,<3"
-lightgbm = ">=4.0,<5"
 
 # PyTorch: GPU build on linux-64 (via the conda-forge `pytorch-gpu` metapackage),
 # CPU build elsewhere. The `[system-requirements]` cuda entry tells pixi the

@@ -1,127 +1,138 @@
 # autoresearch
 
-Template for running **autonomous research experiments** that iteratively
-improve an ML model for a single optimization objective. Two execution
-modes share one harness:
+A template for running **autonomous research sessions** that iteratively improve an ML model.
+An agent (e.g. Claude Code) edits a single scaffold, `train.py`, one atomic change at a time —
+proposing a hypothesis, training, evaluating against held-out data, keeping what helps and
+reverting what doesn't — committing every experiment and logging its reasoning as it goes.
 
-- **LLM mode** — an agent (e.g. Claude Code) edits a scaffold `train.py`
-  one change at a time, tagging each experiment, logging reasoning, and
-  pushing results. Defined by `program.md`.
-- **Optimizer mode** — an Optuna-backed driver (TPE / CMA-ES / Random)
-  iterates over a domain-defined search space. Defined by `optimizers/`.
-
-RouteE (vehicle energy prediction) is the reference domain under
-`domains/routee/`. Adding a new domain is mechanical — see `EXTENDING.md`.
+The reference problem is RouteE vehicle energy prediction: predict per-link energy consumption
+for use inside a shortest-path router. Adapting it to your own problem means editing three files
+(see [Adapting it](#adapting-it)).
 
 ## Repo layout
 
 ```
-program.md              LLM experiment protocol (domain-agnostic)
-fixed_utils.py          Shared evaluation harness (train/test split + metric)
-EXTENDING.md            How to add a domain or an optimizer
-tools/                  Tree creation + harness sync
-  new_experiment_tree.sh
-  sync_harness.sh
-  README-trees.md
-optimizers/             Pluggable Optuna-backed samplers
-  common/               Shared driver, CLI, logging, objective
-  tpe/  cmaes/  random/ Per-method entry points
-domains/                Domain implementations
-  routee/               Reference domain
-    domain.md, domain.json, train.py, learnings.md, seed.md
-    data/  results/
-    search/             Domain hooks for optimizer mode
+program.md       the experiment protocol the agent follows
+domain.md        the problem: context, constraints, etc. 
+learnings.md     findings accumulated across sessions
+train.py         the scaffold under optimization — the only file the agent edits
+harness.py       the fixed point: time budget, split, metrics, reporting — never edited
+data/            dataset (not committed — see data/README.md)
+plans/           one session plan per session, updated live as a progress log
+results/         per-experiment TSV + JSONL, token usage, session transcripts
+tools/           tree creation, token accounting, transcripts
 ```
+
+Two Python files, and the split between them is the whole experimental control. `harness.py` is
+the fixed point: the time budget, the train/test split, the metric definitions, and the report
+format. 
+
+`train.py` is everything else, and all of it is fair game. The agent can rewrite it entirely;
+its only obligations are to score with `harness.evaluate()` and report with `harness.report()`.
 
 ## Quickstart
 
-### Isolated experiment trees
+### 1. Create an isolated tree
 
-Every run happens in a fresh git repo (a "tree") so the agent or optimizer
-cannot see prior sessions via `git log --all`, `git tag -l`, or
-accumulated `learnings.md`. Trees are created by `tools/new_experiment_tree.sh`.
-
-Create an LLM tree for BEV:
+Every run happens in a fresh git repo (a "tree") with exactly one commit, so the agent cannot see
+prior sessions through `git log --all` or an inherited `learnings.md`. 
 
 ```bash
-tools/new_experiment_tree.sh \
-    --name routee-bev-01 \
-    --domain routee \
-    --mode llm \
-    --partition bev
+tools/new_tree.sh ../bev-run-01
 ```
 
-Create an optimizer tree for BEV using TPE:
+The tree symlinks `data/` back to this template's copy, so a checkout of any historical
+experiment commit resolves its data paths unchanged.
+`TEMPLATE_COMMIT` records the full template commit hash used to create the tree.
+
+### 2. Run a session
 
 ```bash
-tools/new_experiment_tree.sh \
-    --name routee-bev-tpe-01 \
-    --domain routee \
-    --mode optimizer \
-    --optimizer tpe \
-    --partition bev
-```
-
-Trees land under `~/repos/routee-autoresearch-trees/<name>/`. The registry
-at `~/repos/routee-autoresearch-trees/registry.jsonl` logs provenance for
-each tree.
-
-### Running inside a tree
-
-LLM mode — kick off an agent against `program.md`:
-
-```bash
-cd ~/repos/routee-autoresearch-trees/routee-bev-01
-claude --dangerously-skip-permissions
+cd ../bev-run-01
+claude
 # then: "Have a look at program.md and let's kick off a new experiment session"
 ```
 
-Optimizer mode — run the chosen sampler:
+The agent runs until a session limit is hit (50 experiments or 8 hours), then writes its findings
+to `learnings.md`, records token usage, and commits the session transcript.
+
+### 3. Read the results
+
+A session is a straight line of commits on `main`. The experiment number
+and the commit hash are recorded with every result:
 
 ```bash
-cd ~/repos/routee-autoresearch-trees/routee-bev-tpe-01
-pixi run python -m optimizers.tpe.search \
-    --tag bev-apr23 \
-    --partition bev \
-    --n-trials 200 \
-    --budget 300
+git log --oneline                          # every experiment, in order
+git show <hash>                            # the change itself
+cat results/results-bev-may8.tsv           # the metrics, one row per experiment
+cat results/experiments-bev-may8.jsonl     # hypothesis, observation, reasoning
+cat results/usage-by-exp-bev-may8.jsonl    # what each experiment cost, per model
+cat results/transcript-audit-bev-may8.md   # how the session actually ran
 ```
+## How scoring works
 
-Both modes write TSV + JSONL under `results/<partition>/` using the same
-schema, so an LLM session and an optimizer session on the same partition
-can be compared directly.
+`harness.evaluate()` returns a dict of named metrics, and that dict is the single source of
+truth for what the metrics are. 
 
-### Syncing a harness fix into a live tree
+## Token cost and transcripts
 
-Rare but occasionally needed. Only the framework + domain scaffold files
-are synced; tree-owned state (`train.py`, `learnings.md`, `seed.md`,
-`results/`, `plans/`) is untouched.
+Two things are recorded about the session itself, both committed into the tree:
+
+- `results/usage-<tag>.jsonl` — appended cumulative per-model token totals for the session (take
+  the latest snapshot per model; do not sum). `results/usage-by-exp-<tag>.jsonl` — rewritten each
+  run, one line per experiment per model, covering only that experiment's window, so these lines
+  _do_ sum. Attribution is retrospective, from the `ended_at` stamps the agent already logs, so
+  nothing has to happen during the experiment loop. Both files also carry
+  `context_tokens_last` / `context_tokens_max` — how full the context window was when each
+  experiment finished, and its peak during that experiment. These are occupancy readings rather
+  than costs, so they are neither summed nor accumulated, and a sharp drop between consecutive
+  experiments is auto-compaction resetting the window. Subagents are counted in the token totals
+  but excluded from the context figures: each runs in a window of its own, so folding them in
+  would report a peak that never happened.
+- `results/transcript-<tag>/` — the raw Claude Code transcripts, verbatim, plus
+  `results/transcript-audit-<tag>.md` summarizing tool calls, every operator prompt, and every
+  path touched outside the tree.
+
+Transcripts are stored through **git-LFS** (`.gitattributes` declares the filter;
+`tools/new_tree.sh` runs `git lfs install --local` in every tree it creates.
+Three consequences worth knowing up front:
+
+- The checked-out file is the real transcript, but `git show <rev>:results/transcript-…` prints
+  the LFS pointer instead. Use `git cat-file --filters <rev>:<path>` to read a historical version,
+  or just read the working-tree copy.
+- A tree with no remote keeps its LFS objects in its own `.git/lfs/objects` — fully local and
+  fully committed. Pushing such a tree later needs an LFS-capable remote.
+- A committed transcript is readable by a _later_ session in the same tree, the same way
+  `learnings.md` already carries across sessions there.
+
+## Adapting it
+
+Three files, in this order:
+
+1. **`harness.py`** — define your metrics in `evaluate()`, and adjust the split and the time
+   budget if your problem needs different ones. Everything downstream follows from `evaluate()`'s
+   keys. 
+2. **`domain.md`** — describe the problem; the constraints (what the model will and won't have
+   available in deployment, and what it must not do to the data);
+3. **`train.py`** — a working baseline for your problem. Keep it simple; it is a starting point
+   the agent will replace, not a finished model. Set `MODEL_FAMILY`, `LINK_FEATURES`, `TARGET`
+   and `DATA_PATH`, load your data, fit something, and hand the results to `report()`. There is
+   no interface to implement — the agent is free to restructure the whole file.
+
+`program.md` is domain-agnostic and should not need editing.
+
+## Development
 
 ```bash
-tools/sync_harness.sh --tree ~/repos/routee-autoresearch-trees/routee-bev-01
+pixi run check    # mypy, ruff, dprint, unit tests
+pixi run test     # unit tests only
+pixi run fix      # apply formatting
 ```
-
-## Docker
-
-The repo ships a sandboxed Docker image with Claude Code, pixi, and the
-full environment pre-installed. See `Dockerfile` and the build/run
-commands below.
-
-```bash
-docker build --build-arg GIT_TOKEN=your_token_here -t autoresearch .
-docker run -it --pids-limit 256 --memory 8g autoresearch
-```
-
-Note if you're running on an NLR machine that has custom SSL certs, you might need to pass in: `--build-arg CA_CERT="$(cat /usr/local/share/ca-certificates/nrel-ca-bundle.crt)"` to the docker build command.
-
-Sandbox: 8 GB memory, 256 PIDs max, no host mounts, dropped Linux
-capabilities, non-root `researcher` user.
 
 # Acknowledgments
- 
+
 This software is built on the "autoresearch" software by github user karpathy available here [link](https://github.com/karpathy/autoresearch) and distributed under the MIT license.
 
 # Metadata
 
 NLR Software Record # SWR 26-089.
-
